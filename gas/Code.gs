@@ -545,7 +545,7 @@ function actionSubmit_(who, body) {
   if (pre.error) return pre.error;
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (x) { return err_('busy', '混み合っています。しばらくしてからもう一度お試しください。'); }
+  try { lock.waitLock(45000); } catch (x) { return err_('busy', '混み合っています。しばらくしてからもう一度お試しください。'); }
   var res;
   try {
     res = submitLocked_(who, mode, v.out, f.ids, body, pre);

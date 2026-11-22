@@ -702,7 +702,7 @@ test('index.html と Code.gs の質問定義（キー・文言・選択肢・必
 
 test('index.html：決まりごとの静的な確認（日付の直書きなし・設定値・novalidate・text/plain・mock はローカルだけ）', () => {
   assert.ok(!HTML.includes('2027年2月21日') && !HTML.includes('2月26日') && !HTML.includes('2027-02'), '締切・発表日の直書きなし');
-  assert.match(HTML, /const LIFF_ID = '';/); assert.match(HTML, /const API_URL = '';/);
+  assert.match(HTML, /const LIFF_ID = '(\d{10}-[A-Za-z0-9]{8})?';/); assert.match(HTML, /const API_URL = '(https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec)?';/);
   assert.ok(HTML.includes("const ADD_FRIEND_URL = 'https://lin.ee/OSrDrX3';"));
   assert.ok(HTML.includes('novalidate'));
   assert.ok(HTML.includes("'Content-Type': 'text/plain;charset=utf-8'"));

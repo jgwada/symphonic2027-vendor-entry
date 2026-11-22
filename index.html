@@ -94,8 +94,8 @@ input[type=file]::file-selector-button{font:inherit}
 'use strict';
 
 /* ===== 設定値 ===== */
-const LIFF_ID = '';
-const API_URL = '';
+const LIFF_ID = '2012747192-OkuTUVdR';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwtMFhmjmy57sXGllT86t8SJ6PGNCdMxmZqyo3WNnmiXPR1tHn_HPQhLHdhx0bHCNY/exec'; // 試験用。本番の前に差し替える
 const ADD_FRIEND_URL = 'https://lin.ee/OSrDrX3';
 
 /* ===== 定数 ===== */
@@ -228,7 +228,17 @@ function mockApi(p) {
   });
 }
 const L = MOCK ? mockLiff() : window.liff;
+/** busy（順番待ちが取れなかった）は何も書かれていないので、少し待って2回まで送り直す */
 async function api(action, payload) {
+  let res;
+  for (let i = 0; i < 3; i++) {
+    res = await apiOnce(action, payload);
+    if (!res || res.error !== 'busy' || action === 'status') break;
+    await new Promise(function (ok) { setTimeout(ok, 3000 + Math.random() * 3000); });
+  }
+  return res;
+}
+async function apiOnce(action, payload) {
   const body = Object.assign({ action: action, idToken: L.getIDToken() }, payload || {});
   let res;
   if (MOCK) res = await mockApi(body);
@@ -272,6 +282,8 @@ function restoreDraft() {
 }
 function relogin() {
   saveDraft();
+  // LINE アプリの中では liff.login() が使えないので、LIFF を開き直して新しい IDトークンをもらう
+  if (L.isInClient && L.isInClient()) { location.href = 'https://liff.line.me/' + LIFF_ID; return; }
   L.login({ redirectUri: location.href });
 }
 /** 残り5分未満なら退避してログインし直す。false のときは呼び出し側は送らずに戻る。 */
