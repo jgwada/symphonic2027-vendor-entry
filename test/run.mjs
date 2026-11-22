@@ -15,6 +15,7 @@ const SHEETM = 'application/vnd.google-apps.spreadsheet';
 /* ---------- にせ物 ---------- */
 function makeEnv(opt = {}) {
   const props = new Map();
+  const hooks = { flushError: false, onLock: null, locked: false, events: [] };
   const set = (k, v) => props.set(k, v);
   const drive = new Map();
   let nid = 0;
@@ -34,6 +35,7 @@ function makeEnv(opt = {}) {
       },
       get(id, o) {
         needShared(o, 'get');
+        hooks.events.push('get');
         const f = drive.get(id);
         if (!f) throw new Error('not found ' + id);
         return pub(f);
@@ -75,7 +77,11 @@ function makeEnv(opt = {}) {
       setValues(vals) {
         for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) {
           let v = vals[i][j];
-          if (typeof v === 'string' && /^[=+\-@]/.test(v) && tab.fmt.get(key(r + i, c + j)) !== '@') tab.formulas.push(key(r + i, c + j)); // 書式が@でないと数式になる
+          // 本物の挙動：書式が@でも「=」「+」「-」「@」始まりは数式扱い（#NAME? などになる）。先頭が ' なら文字で、' は表示も getValues も返さない
+          if (typeof v === 'string') {
+            if (v.startsWith("'")) v = v.slice(1);
+            else if (/^[=+\-@]/.test(v)) { tab.formulas.push(key(r + i, c + j)); v = '#NAME?'; }
+          }
           tab.cells.set(key(r + i, c + j), v);
           tab.lastRow = Math.max(tab.lastRow, r + i); tab.lastCol = Math.max(tab.lastCol, c + j);
         }
@@ -103,11 +109,14 @@ function makeEnv(opt = {}) {
         insertSheet: (n) => { const t = mkTab(n); s.tabs.push(t); return t; }
       };
     },
+    flush() { if (hooks.flushError) throw new Error('flush error'); },
     getUi() { throw new Error('ui なし'); }
   };
   const PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => (props.has(k) ? props.get(k) : null), setProperty: (k, v) => props.set(k, String(v)), deleteProperty: (k) => props.delete(k) }) };
-  let locked = false;
-  const LockService = { getScriptLock: () => ({ waitLock() { if (locked) throw new Error('lock'); locked = true; }, releaseLock() { locked = false; } }) };
+  const LockService = { getScriptLock: () => ({
+    waitLock() { if (hooks.locked) throw new Error('lock'); hooks.events.push('lock'); if (hooks.onLock) hooks.onLock(); hooks.locked = true; },
+    tryLock() { if (hooks.locked) return false; hooks.locked = true; return true; },
+    releaseLock() { hooks.locked = false; hooks.events.push('unlock'); } }) };
   const fetchLog = [];
   const behavior = { verifyOk: (tok) => /^idt:/.test(tok), pushStatus: 200 };
   const UrlFetchApp = {
@@ -155,7 +164,7 @@ function makeEnv(opt = {}) {
   ctx.setup();
   const run = (code) => vm.runInContext(code, ctx);
   const env = {
-    ctx, props, drive, sheets, fetchLog, behavior, triggers, run, set,
+    ctx, props, drive, sheets, hooks, fetchLog, behavior, triggers, run, set,
     sheet: () => sheets.get(props.get('SHEET_ID')).tabs.find((t) => t.name === '応募'),
     call(body) { const o = ctx.doPost({ postData: { contents: JSON.stringify(body) } }); return JSON.parse(o.getContent()); },
     pushes: () => fetchLog.filter((x) => x.url.includes('/push')).map((x) => JSON.parse(x.o.payload)),
@@ -652,7 +661,7 @@ test('見出しは名前で探す：運営が列の途中に足しても、後�
   const r = submit(env, sub, 'new', tentData(), { ...NOFILES, ...tentFiles(env, sub) });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(t.cell(2, env.colOf('店舗名（屋号）')), 'テスト食堂');
-  assert.equal(t.cell(2, 1), '', '運営の列には書かない');
+  assert.equal(t.cell(2, 1), 'メモ', '運営の列のセルは上書きしない');
   // TAIL_LABELS に項目を足すと右端に足される
   env.run("TAIL_LABELS = ['追加の項目']");
   const before = t.lastCol;
@@ -728,6 +737,200 @@ test('Code.gs：日付はいちばん上の3か所だけ／DriveApp を使わな
   assert.ok(!/DriveApp/.test(CODE));
   assert.ok(!/body\.userId|body\.lineUserId|data\.lineUserId|e\.parameter/.test(CODE));
   assert.ok(!/Sheets\.Spreadsheets|SpreadsheetApp\.getActive/.test(CODE));
+});
+
+
+test('先頭が = + - @ \' の文字は先頭に \' を付けて書く（本物のSheetsでは書式@でも数式になるため）。読み戻しに \' は付かない', () => {
+  const env = makeEnv();
+  const sub = 'Uapos';
+  const vals = { shop: '=テスト食堂', company: '+81 shop', rep: '-1', contact: '@cmd', item1Name: "'引用符始まり", pr: '=1+1\n2行目' };
+  const r = submit(env, sub, 'new', tentData(vals), { ...NOFILES, ...tentFiles(env, sub) });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const t = env.sheet();
+  assert.deepEqual(t.formulas, [], '数式として入ったセルは無い');
+  for (const [k, l] of [['shop', '店舗名（屋号）'], ['company', '会社名（団体名）'], ['rep', '代表者名'], ['contact', '当日担当者'], ['item1Name', '出店商品①の商品名'], ['pr', '店舗のPR文']]) assert.equal(t.cell(2, env.colOf(l)), vals[k], k);
+  const st = env.call({ action: 'status', ...env.as(sub) });
+  for (const k of Object.keys(vals)) assert.equal(st.entry.data[k], vals[k], 'status の entry に \' が付かない: ' + k);
+  // LINE表示名が「=」で始まっても数式にならない
+  const sub2 = 'Uapos2';
+  assert.equal(submit(env, sub2, 'new', tentData({ shop: '-x' }), { ...NOFILES, ...tentFiles(env, sub2) }, { displayName: '=名前' }).ok, true);
+  assert.deepEqual(t.formulas, []);
+  // update も同じ
+  assert.equal(submit(env, sub, 'update', tentData({ shop: '=更新後' }), { ...NOFILES, ...tentFiles(env, sub) }).ok, true);
+  assert.equal(t.cell(2, env.colOf('店舗名（屋号）')), '=更新後'); assert.deepEqual(t.formulas, []);
+  assert.equal(env.call({ action: 'status', ...env.as(sub) }).entry.data.shop, '=更新後');
+});
+
+test('書き込みエラー（flush）は catch に入り、new は書いた行を空にして印を付けない／update は元の値に戻る', () => {
+  const env = makeEnv();
+  const sub = 'Uflush';
+  const f = { ...NOFILES, ...tentFiles(env, sub) };
+  env.hooks.flushError = true;
+  const r = submit(env, sub, 'new', tentData(), f);
+  assert.equal(r.error, 'saveFailed');
+  assert.ok(!env.props.has('applied:' + sub), '印なし');
+  const t = env.sheet();
+  for (let c = 1; c <= t.lastCol; c++) assert.equal(t.cell(2, c), '', '書いた行は空に戻る: col ' + c);
+  for (const id of Object.values(f).flat()) assert.deepEqual(env.drive.get(id).parents, [env.temp()]);
+  env.hooks.flushError = false;
+  const again = submit(env, sub, 'new', tentData(), f);
+  assert.equal(again.ok, true, JSON.stringify(again));
+  assert.equal(t.cell(2, env.colOf('受付番号')), again.receiptNo, '空に戻した行が再利用される');
+  assert.equal(t.lastRow, 2);
+  // update の失敗：シートの値が元に戻る
+  const before = { shop: t.cell(2, env.colOf('店舗名（屋号）')), staff: t.cell(2, env.colOf('当日のスタッフ人数')), upd: t.cell(2, env.colOf('最終変更日時')), file: t.cell(2, env.colOf('PL保険証の写し')) };
+  const f2 = { ...NOFILES, ...tentFiles(env, sub) };
+  env.hooks.flushError = true;
+  const u = submit(env, sub, 'update', tentData({ shop: '失敗する更新', staff: '9' }), f2);
+  assert.equal(u.error, 'saveFailed');
+  assert.equal(t.cell(2, env.colOf('店舗名（屋号）')), before.shop); assert.equal(t.cell(2, env.colOf('当日のスタッフ人数')), before.staff);
+  assert.equal(t.cell(2, env.colOf('最終変更日時')), before.upd); assert.equal(t.cell(2, env.colOf('PL保険証の写し')), before.file);
+  assert.equal(env.props.get('applied:' + sub), again.receiptNo);
+  for (const id of Object.values(f2).flat()) assert.deepEqual(env.drive.get(id).parents, [env.temp()], '新しいファイルは一時保管へ戻る');
+});
+
+test('新しい行は「受付番号の列で最後に埋まっている行＋1」／運営の列のセルには値も書式も触らない', () => {
+  const env = makeEnv();
+  const t = env.sheet();
+  const a = submit(env, 'Urow1', 'new', tentData(), { ...NOFILES, ...tentFiles(env, 'Urow1') });
+  assert.equal(a.ok, true);
+  // 運営が列の途中に「運営列」を足す（フォームの列の間）。その列の2行目以降にも値を入れ、受付番号の無い行（メモ）を下に作る
+  const mid = env.colOf('メールアドレス');
+  for (let r = 6; r >= 1; r--) for (let c = t.lastCol; c > mid; c--) { t.cells.set(r + ',' + (c + 1), t.cell(r, c)); if (t.fmt.has(r + ',' + c)) t.fmt.set(r + ',' + (c + 1), t.fmt.get(r + ',' + c)); }
+  t.lastCol += 1;
+  t.cells.set('1,' + (mid + 1), '運営列'); t.cells.set('2,' + (mid + 1), '運営A');
+  t.cells.set('3,' + (mid + 1), '運営B'); t.fmt.set('3,' + (mid + 1), '0.00');
+  t.cells.set('6,1', '下のほうのメモ'); t.lastRow = 6; // 受付番号の無い行が下にある
+  const b = submit(env, 'Urow2', 'new', tentData({ shop: '二番目' }), { ...NOFILES, ...tentFiles(env, 'Urow2') });
+  assert.equal(b.ok, true, JSON.stringify(b));
+  assert.equal(t.cell(3, env.colOf('受付番号')), b.receiptNo, '受付番号の列で最後に埋まっている行の次（3行目）に書く');
+  assert.equal(t.cell(3, env.colOf('店舗名（屋号）')), '二番目');
+  assert.equal(t.cell(3, mid + 1), '運営B', '運営の列の値は触らない');
+  assert.equal(t.fmt.get('3,' + (mid + 1)), '0.00', '運営の列の書式は触らない');
+  assert.equal(t.cell(2, mid + 1), '運営A');
+  assert.equal(t.cell(6, 1), '下のほうのメモ');
+  assert.equal(t.cell(3, env.colOf('メールアドレス')), 'test@example.com');
+  // update でも運営の列に触らない
+  t.fmt.set('2,' + (mid + 1), '#,##0');
+  assert.equal(submit(env, 'Urow1', 'update', tentData({ shop: '更新' }), { ...NOFILES, ...tentFiles(env, 'Urow1') }).ok, true);
+  assert.equal(t.cell(2, mid + 1), '運営A'); assert.equal(t.fmt.get('2,' + (mid + 1)), '#,##0');
+  assert.equal(t.cell(2, env.colOf('店舗名（屋号）')), '更新');
+});
+
+test('update：外したファイルを動かすのは本人のものだけ／シートにある他人のファイルURLを残しても断らず、触らない', () => {
+  const env = makeEnv();
+  const sub = 'Uown';
+  const f1 = { ...NOFILES, ...tentFiles(env, sub) };
+  const r = submit(env, sub, 'new', tentData(), f1);
+  assert.equal(r.ok, true);
+  const folderId = env.props.get('folder:' + r.receiptNo);
+  // 運営が「他人のファイル」と「持ち主の無いファイル」のURLをシートのファイル列に足した（応募フォルダ内に置いてある）
+  const mk = (desc, name) => env.ctx.Drive.Files.create({ name, mimeType: 'application/pdf', parents: [folderId], description: desc }, null, { supportsAllDrives: true }).id;
+  const foreign = mk('owner:Usomeone', '他人.pdf'), nobody = mk('', '持ち主なし.pdf');
+  const t = env.sheet(); const col = env.colOf('PL保険証の写し');
+  t.cells.set('2,' + col, t.cell(2, col) + '\nhttps://drive.google.com/file/d/' + foreign + '/view\nhttps://drive.google.com/file/d/' + nobody + '/view');
+  const own = f1.file_pl[0];
+  // 画面は entry で全部返してくるので、3つとも送り返す → 断られず、他人のものは動かず、URLも残る
+  const u = submit(env, sub, 'update', tentData(), { ...f1, file_pl: [own, foreign, nobody] });
+  assert.equal(u.ok, true, JSON.stringify(u));
+  for (const id of [foreign, nobody]) { assert.deepEqual(env.drive.get(id).parents, [folderId]); }
+  assert.equal(env.drive.get(foreign).name, '他人.pdf'); assert.equal(env.drive.get(nobody).name, '持ち主なし.pdf');
+  assert.ok(t.cell(2, col).includes(foreign) && t.cell(2, col).includes(nobody));
+  // 外した場合：本人のものは 差し替え前、他人のものは触らない（URLも消える）
+  const added = env.upload(sub, 'file_pl', { mime: 'application/pdf' }).fileId;
+  const u2 = submit(env, sub, 'update', tentData(), { ...f1, file_pl: [added] });
+  assert.equal(u2.ok, true, JSON.stringify(u2));
+  const repl = [...env.drive.values()].find((x) => x.name === '差し替え前' && x.parents.includes(folderId));
+  assert.deepEqual(env.drive.get(own).parents, [repl.id], '本人のものは差し替え前へ');
+  assert.deepEqual(env.drive.get(foreign).parents, [folderId], '他人のものは動かさない'); assert.deepEqual(env.drive.get(nobody).parents, [folderId]);
+  // 送ってきたIDが「シートに元から無い」他人のファイルなら、従来どおり断る
+  const stranger = env.ctx.Drive.Files.create({ name: 's.pdf', mimeType: 'application/pdf', parents: [folderId], description: 'owner:Usomeone' }, null, { supportsAllDrives: true }).id;
+  assert.equal(submit(env, sub, 'update', tentData(), { ...f1, file_pl: [added, stranger] }).error, 'invalid');
+});
+
+test('cleanupTemp はロックが取れなければその日は何もしない', () => {
+  const env = makeEnv();
+  const old = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+  const f = env.ctx.Drive.Files.create({ name: 'o', mimeType: 'image/jpeg', parents: [env.temp()], description: 'owner:U' }, null, { supportsAllDrives: true });
+  env.drive.get(f.id).createdTime = old;
+  env.hooks.locked = true;
+  assert.equal(env.ctx.cleanupTemp(), 0);
+  assert.equal(env.drive.get(f.id).trashed, false);
+  env.hooks.locked = false;
+  assert.equal(env.ctx.cleanupTemp(), 1);
+  assert.equal(env.hooks.locked, false, 'ロックは返す');
+});
+
+test('持ち主確認はロックの外で先に済ませる／ロックの中では動かす直前にゴミ箱だけ再確認する', () => {
+  const env = makeEnv();
+  const sub = 'Ulockorder';
+  const f = { ...NOFILES, ...tentFiles(env, sub) };
+  env.hooks.events.length = 0;
+  assert.equal(submit(env, sub, 'new', tentData(), f).ok, true);
+  const ev = env.hooks.events;
+  const lockAt = ev.indexOf('lock');
+  const n = Object.values(f).flat().length;
+  assert.ok(ev.slice(0, lockAt).filter((e) => e === 'get').length >= n, 'ロックの前に全ファイルの get を済ませる: ' + ev.join(','));
+  // 確認のあと動かす前にファイルがゴミ箱へ入れられたら、ロックの中の再確認で断る（何も書かない）
+  const sub2 = 'Ulockorder2';
+  const f2 = { ...NOFILES, ...tentFiles(env, sub2) };
+  const target = f2.file_pl[0];
+  env.hooks.onLock = () => { env.drive.get(target).trashed = true; env.hooks.onLock = null; };
+  const r = submit(env, sub2, 'new', tentData(), f2);
+  assert.equal(r.error, 'invalid'); assert.deepEqual(ids(r), ['file_pl']);
+  assert.ok(!env.props.has('applied:' + sub2));
+  assert.equal(env.sheet().lastRow, 2, '2件目は書かれていない');
+  assert.deepEqual(env.drive.get(f2.file_menu_photo[0]).parents, [env.temp()], '他のファイルも動かさない');
+});
+
+
+test('index.html（画面の直し）：null を append しない・全角の正規化・accept・IDトークン期限切れ・タイムアウト後の出し直しなど', () => {
+  const script = [...HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])[0];
+  // 7: DOM の append は el と add の2か所だけ（null を直接 append しない）
+  assert.equal((script.match(/\.append\(/g) || []).length, 2);
+  assert.ok(/function add\(parent\)[\s\S]*?kid == null \|\| kid === false\) return;/.test(script));
+  // 10: toHalf を取り出して実際に動かす
+  const fn = script.match(/function toHalf\(s\) \{[\s\S]*?\n\}/)[0];
+  const toHalf = vm.runInNewContext('(' + fn.replace('function toHalf', 'function') + ')');
+  assert.equal(toHalf('０７７－０００－００００'), '077-000-0000');
+  assert.equal(toHalf('０７７ー０００ー００００'), '077-000-0000');
+  assert.equal(toHalf('５２５−０００１'), '525-0001');
+  assert.equal(toHalf('２．５'), '2.5'); assert.equal(toHalf('5．2'), '5.2');
+  // 11・19
+  assert.ok(script.includes("accept: 'image/*,application/pdf'"));
+  assert.match(HTML, /input\[type=file\]\{[^}]*font-size:16px/);
+  // 9: タイムアウト後に status が成功で返ったら出し直す（タイムアウトで return しない）
+  const boot = script.match(/async function boot\(\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(!/const st = await api\('status'\);\s*if \(S\.timedOut\) return;/.test(boot));
+  assert.ok(/const fr = await L\.getFriendship\(\);\s*if \(!fr/.test(boot));
+  // 13: status が ok:false のときはサーバーの文言を出さず、指示書の文言と段階名
+  assert.ok(boot.includes("showMsg('読み込みに失敗しました。開き直してください', '段階：status')"));
+  assert.ok(!/st\.message/.test(boot));
+  // 12: IDトークンの期限（残り5分）・退避・ログインし直し・復元
+  assert.ok(script.includes('getDecodedIDToken') && script.includes('exp - Date.now() / 1000 < 300'));
+  assert.ok(script.includes('L.login({ redirectUri: location.href })'));
+  assert.ok(/sessionStorage\.setItem\(DRAFT_KEY/.test(script) && /sessionStorage\.removeItem\(DRAFT_KEY\)/.test(script));
+  assert.ok(/async function onSubmit\(\) \{\s*if \(sending\) return;\s*if \(!ensureFresh\(\)\) return;/.test(script));
+  assert.ok(/async function uploadItem\(key, item\) \{[\s\S]*?if \(!ensureFresh\(\)\) return;/.test(script));
+  assert.ok(/res\.error === 'unauthorized' && action !== 'status'\) \{\s*relogin\(\);/.test(script));
+  assert.ok(script.includes('restoreDraft();'));
+  // mock でも確かめられる
+  assert.ok(script.includes("params.get('tokenLeft')") && script.includes("params.get('expired') === '1'"));
+  // 14
+  assert.ok(script.includes('アップロードに失敗しました。もう一度お試しいただくか、削除してください。'));
+  assert.ok(script.includes('のファイルの送信が終わっていません。'));
+  // 15
+  assert.ok(script.includes('S.queue.then(run, run).catch('));
+  // 16: 送信中は全部 disabled に（失敗したら戻す）
+  assert.ok(script.includes('allset.disabled = true;') && script.includes('allset.disabled = S.readonly;'));
+  // 17
+  assert.ok(script.includes('すでにご応募いただいています。このページを開き直すと、内容の確認・変更ができます。'));
+  // 18
+  assert.ok(/setTimeout\(function \(\) \{ ctl\.abort\(\); \}, 8000\)/.test(script));
+  // 8: 形態を戻したら値・ファイルを戻す
+  assert.ok(script.includes('function stashField(f)') && script.includes('function restoreField(f)') && script.includes("S.stash[sk]"));
+  // 新しい文字は指示どおり（サーバーが本文のuserIdを受け取る道がない）
+  assert.ok(!/userId\s*:/.test(script.replace(/getProfile[\s\S]*?Umock[\s\S]*?\}\)/, '')));
 });
 
 /* ---------- 実行 ---------- */

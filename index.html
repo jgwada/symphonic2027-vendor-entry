@@ -67,7 +67,8 @@ input:disabled,select:disabled,textarea:disabled{background:#f4f6f8;color:#3a465
 .frow button.retry{border-color:var(--red);color:var(--red)}
 .ro .frow button{display:none}
 .ferr{font-size:13px;color:var(--red);margin:6px 0 0}
-input[type=file]{height:auto;padding:10px 12px;font-size:14px}
+input[type=file]{height:auto;padding:10px 12px;font-size:16px}
+input[type=file]::file-selector-button{font:inherit}
 .errbox{border:1px solid var(--red);border-radius:8px;padding:12px 14px;margin:24px 0 12px;color:var(--red)}
 .errbox[hidden]{display:none}
 .errbox b{display:block;margin-bottom:4px}
@@ -140,12 +141,23 @@ function el(tag, attrs) {
   }
   return e;
 }
+/* 親に子を足す。null・false は足さない（DOM の append は null を「null」という文字にするため） */
+function add(parent) {
+  for (let i = 1; i < arguments.length; i++) {
+    [].concat(arguments[i]).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      parent.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    });
+  }
+  return parent;
+}
 function show() { view.replaceChildren.apply(view, [].concat.apply([], [].slice.call(arguments))); window.scrollTo(0, 0); }
 function showMsg(text, sub) {
   show(el('div', { class: 'msg' }, el('p', { text: text }), sub ? el('p', { class: 'small', text: sub }) : null));
 }
 function toHalf(s) {
   return String(s).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/[．。]/g, '.')
     .replace(/[－−‐‑–—―ー]/g, '-');
 }
 function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -155,7 +167,15 @@ function mockLiff() {
   return {
     init: function () { return Promise.resolve(); },
     isLoggedIn: function () { return true; },
-    login: function () {},
+    login: function (o) {
+      try { sessionStorage.setItem('ss27_mock_relogin', '1'); } catch (e) { /* 何もしない */ }
+      location.href = (o && o.redirectUri) || location.href;
+    },
+    getDecodedIDToken: function () {
+      let left = parseInt(params.get('tokenLeft') || '3600', 10);
+      try { if (sessionStorage.getItem('ss27_mock_relogin')) left = 3600; } catch (e) { /* 何もしない */ }
+      return { exp: Math.floor(Date.now() / 1000) + left };
+    },
     getProfile: function () {
       if (MOCK_STATE === 'error') return Promise.reject(new Error('mock'));
       return Promise.resolve({ userId: 'Umock', displayName: 'モック太郎' });
@@ -185,8 +205,15 @@ const mockEntry = {
 };
 function mockApi(p) {
   const base = { deadlineText: '【モック】締切日時', resultDateText: '【モック】発表日' };
-  return wait(250).then(function () {
+  return wait(250).then(async function () {
+    let relogged = false;
+    try { relogged = !!sessionStorage.getItem('ss27_mock_relogin'); } catch (e) { /* 何もしない */ }
+    if (params.get('expired') === '1' && !relogged && (p.action === 'submit' || p.action === 'upload')) {
+      return { ok: false, error: 'unauthorized', message: '本人確認に失敗しました。このページを開き直してください。' };
+    }
     if (p.action === 'status') {
+      const extra = parseInt(params.get('statusDelay') || '0', 10);
+      if (extra) await wait(extra);
       const closed = MOCK_STATE === 'closed' || MOCK_STATE === 'closedApplied';
       const applied = MOCK_STATE === 'applied' || MOCK_STATE === 'closedApplied';
       const r = Object.assign({ ok: true, closed: closed, applied: applied, canEdit: applied && !closed }, base);
@@ -203,13 +230,59 @@ function mockApi(p) {
 const L = MOCK ? mockLiff() : window.liff;
 async function api(action, payload) {
   const body = Object.assign({ action: action, idToken: L.getIDToken() }, payload || {});
-  if (MOCK) return mockApi(body);
-  const ctl = new AbortController();
-  const timer = setTimeout(function () { ctl.abort(); }, 120000);
+  let res;
+  if (MOCK) res = await mockApi(body);
+  else {
+    const ctl = new AbortController();
+    const timer = setTimeout(function () { ctl.abort(); }, 120000);
+    try {
+      const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), signal: ctl.signal });
+      res = await r.json();
+    } finally { clearTimeout(timer); }
+  }
+  if (res && res.error === 'unauthorized' && action !== 'status') {
+    relogin();
+    const e = new Error('relogin'); e.relogin = true; throw e;
+  }
+  return res;
+}
+
+/* ===== IDトークンの期限切れ対策（入力中の値と済みファイルを退避してログインし直す） ===== */
+const DRAFT_KEY = 'ss27_vendor_draft';
+function saveDraft() {
   try {
-    const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), signal: ctl.signal });
-    return await res.json();
-  } finally { clearTimeout(timer); }
+    const c = collect();
+    const files = {};
+    FIELDS.forEach(function (f) {
+      if (f.type === 'file') files[f.key] = S.files[f.key].filter(function (x) { return x.status === 'done'; }).map(function (x) { return { id: x.id, name: x.name }; });
+    });
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ mode: S.mode, data: c.data, files: files }));
+  } catch (e) { /* 退避できなくてもログインし直しは続ける */ }
+}
+function restoreDraft() {
+  let d = null;
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (raw) d = JSON.parse(raw);
+    sessionStorage.removeItem(DRAFT_KEY);
+  } catch (e) { d = null; }
+  if (!d || d.mode !== S.mode || S.readonly) return;
+  fillEntry({ data: d.data, files: d.files });
+  applyVisibility();
+}
+function relogin() {
+  saveDraft();
+  L.login({ redirectUri: location.href });
+}
+/** 残り5分未満なら退避してログインし直す。false のときは呼び出し側は送らずに戻る。 */
+function ensureFresh() {
+  let exp = 0;
+  try {
+    const d = L.getDecodedIDToken && L.getDecodedIDToken();
+    exp = d && d.exp ? d.exp : 0;
+  } catch (e) { exp = 0; }
+  if (exp && exp - Date.now() / 1000 < 300) { relogin(); return false; }
+  return true;
 }
 
 /* ===== 起動 ===== */
@@ -227,14 +300,12 @@ async function boot() {
     if (!L.getIDToken()) throw new Error('no id token');
     stage = 'friendship';
     const fr = await L.getFriendship();
-    if (S.timedOut) return;
     if (!fr || !fr.friendFlag) { clearTimeout(timer); return showNotFriend(); }
     stage = 'status';
     const st = await api('status');
-    if (S.timedOut) return;
     clearTimeout(timer);
-    if (!st || !st.ok) { showMsg((st && st.message) || '読み込みに失敗しました。開き直してください', '段階：status'); return; }
-    S.ctx = st;
+    if (!st || !st.ok) { showMsg('読み込みに失敗しました。開き直してください', '段階：status'); return; }
+    S.ctx = st; // タイムアウト表示のあとでも、成功で返ってきたらこの結果で画面を出し直す
     route(st);
   } catch (e) {
     clearTimeout(timer);
@@ -284,16 +355,16 @@ function buildField(f) {
     const inp = el('input', { type: itype, id: id, name: f.key, autocomplete: f.type === 'email' ? 'email' : 'off',
       inputmode: f.type === 'tel' || f.type === 'zip' ? 'tel' : f.type === 'num' ? 'decimal' : f.type === 'int' ? 'numeric' : null });
     S.refs[f.key] = inp;
-    wrap.append(head(f, true), noteEl(f));
+    add(wrap, head(f, true), noteEl(f));
     if (f.type === 'zip') {
-      wrap.append(el('div', { class: 'row' }, inp, el('button', { type: 'button', class: 'btn sm', text: '住所を検索', onclick: searchZip })));
-    } else wrap.append(inp);
+      add(wrap, el('div', { class: 'row' }, inp, el('button', { type: 'button', class: 'btn sm', text: '住所を検索', onclick: searchZip })));
+    } else add(wrap, inp);
     if (f.type === 'zip' || f.type === 'tel' || f.type === 'num' || f.type === 'int') {
       inp.addEventListener('change', function () { inp.value = toHalf(inp.value).trim(); });
     }
     if (f.limit) {
       const w = el('div', { class: 'warn', hidden: true, text: '規定サイズ（全長6m×全幅2.5m×全高3.5m）を超えています。' });
-      wrap.append(w);
+      add(wrap, w);
       const upd = function () {
         const n = parseFloat(toHalf(inp.value));
         w.hidden = !(isFinite(n) && n > f.limit);
@@ -305,58 +376,58 @@ function buildField(f) {
     const sel = el('select', { id: id, name: f.key }, el('option', { value: '', text: '選択してください' }),
       f.options.map(function (o) { return el('option', { value: o, text: o }); }));
     S.refs[f.key] = sel;
-    wrap.append(head(f, true), noteEl(f), sel);
+    add(wrap, head(f, true), noteEl(f), sel);
   } else if (f.type === 'area') {
     const ta = el('textarea', { id: id, name: f.key });
     S.refs[f.key] = ta;
-    wrap.append(head(f, true), noteEl(f), ta);
+    add(wrap, head(f, true), noteEl(f), ta);
   } else if (f.type === 'check') {
     const box = el('div', { class: 'checks' }, f.options.map(function (o) {
       return el('label', null, el('input', { type: 'checkbox', value: o, name: f.key }), el('span', { text: o }));
     }));
     S.refs[f.key] = box;
-    wrap.append(head(f, false), noteEl(f), box);
+    add(wrap, head(f, false), noteEl(f), box);
   } else if (f.type === 'consent') {
     const box = el('div', { class: 'checks' }, f.items.map(function (c) {
       return el('label', { 'data-scope': c.scope || 'all' }, el('input', { type: 'checkbox', value: c.text, name: f.key }), el('span', { text: c.text }));
     }));
     S.refs[f.key] = box;
-    wrap.append(head(f, false), noteEl(f), box);
+    add(wrap, head(f, false), noteEl(f), box);
   } else if (f.type === 'file') {
     S.files[f.key] = [];
     const list = el('div', { class: 'flist' });
     const ferr = el('p', { class: 'ferr', hidden: true });
-    const inp = el('input', { type: 'file', id: id, multiple: true, accept: 'image/jpeg,image/png,image/heic,image/heif,image/webp,application/pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.pdf' });
+    const inp = el('input', { type: 'file', id: id, multiple: true, accept: 'image/*,application/pdf' });
     inp.addEventListener('change', function () { addFiles(f.key, [].slice.call(inp.files)); inp.value = ''; });
     S.refs[f.key] = { input: inp, list: list, ferr: ferr };
-    wrap.append(head(f, true), inp, ferr, list);
+    add(wrap, head(f, true), inp, ferr, list);
   }
   return wrap;
 }
 
 function renderForm(st) {
-  S.refs = {}; S.wraps = {}; S.files = {};
+  S.refs = {}; S.wraps = {}; S.files = {}; S.active = {}; S.stash = {};
   const form = el('form', { id: 'form', novalidate: true, class: S.readonly ? 'ro' : '' });
   const all = el('fieldset', { id: 'allset' });
-  form.append(all);
+  add(form, all);
   S.secs = [];
   SCHEMA.sections.forEach(function (sec) {
     const body = el('fieldset', { class: 'secbody' });
     const blk = el('section', { class: 'block', 'data-scope': sec.scope }, el('h2', { class: 'sec', text: sec.title }), body);
     S.secs.push({ sec: sec, blk: blk, body: body });
     sec.items.forEach(function (f) {
-      if (f.kind === 'note') body.append(el('p', { class: 'note', text: f.text }));
-      else if (f.kind === 'heading') body.append(el('div', { class: 'subh' }, el('h3', { text: f.title }), el('p', { text: f.text })));
-      else body.append(buildField(f));
+      if (f.kind === 'note') add(body, el('p', { class: 'note', text: f.text }));
+      else if (f.kind === 'heading') add(body, el('div', { class: 'subh' }, el('h3', { text: f.title }), el('p', { text: f.text })));
+      else add(body, buildField(f));
     });
-    all.append(blk);
+    add(all, blk);
   });
   const errbox = el('div', { class: 'errbox', id: 'errbox', hidden: true, role: 'alert' });
   const btn = el('button', { type: 'submit', class: 'btn', id: 'submitBtn', text: S.mode === 'update' ? '変更を保存する' : '応募する' });
   const tail = S.readonly ? null : el('div', { class: 'submit' }, errbox, btn,
     el('p', { class: 'note', text: 'ご応募は、LINEアカウント1つにつき1回までです。送信後も' + st.deadlineText + 'まで、このフォームを開き直すと内容の確認・変更ができます。' }));
   if (S.readonly) { all.disabled = true; }
-  form.append(tail);
+  add(form, tail);
   form.addEventListener('submit', function (ev) { ev.preventDefault(); onSubmit(); });
   const onEdit = function (ev) {
     applyVisibility();
@@ -377,6 +448,7 @@ function renderForm(st) {
   show(top, intro(st), form);
   if (st.entry) fillEntry(st.entry);
   applyVisibility();
+  restoreDraft();
 }
 
 /* ===== 値の読み書き・出し分け ===== */
@@ -413,6 +485,22 @@ function clearField(f) {
   if (S.refs[f.key + ':warn']) S.refs[f.key + ':warn']();
   S.wraps[f.key].classList.remove('err');
 }
+/* 隠れる前の値・済みファイルを覚えておく（送信データには入れない。隠れた欄は空で送る） */
+function stashField(f) {
+  if (f.type === 'file') {
+    const done = S.files[f.key].filter(function (x) { return x.status === 'done'; });
+    if (done.length) S.stash[f.key] = done;
+    return;
+  }
+  const v = getValue(f);
+  if ((Array.isArray(v) && v.length) || (!Array.isArray(v) && v !== '')) S.stash[f.key] = v;
+}
+function restoreField(f) {
+  if (!(f.key in S.stash)) return;
+  if (f.type === 'file') { S.files[f.key] = S.stash[f.key]; renderFiles(f.key); }
+  else setValue(f, S.stash[f.key]);
+  delete S.stash[f.key];
+}
 function applyVisibility() {
   const type = S.refs.type.value;
   S.secs.forEach(function (s) {
@@ -423,6 +511,9 @@ function applyVisibility() {
   FIELDS.forEach(function (f) {
     const wrap = S.wraps[f.key];
     const on = isActive(f);
+    if (on && S.active[f.key] === false) restoreField(f); // 出店形態などを戻したら、前に入れていた値・済みファイルを戻す
+    if (!on && S.active[f.key] !== false) stashField(f);
+    S.active[f.key] = on;
     wrap.hidden = !on;
     wrap.disabled = !on;
     if (!on) clearField(f);
@@ -433,7 +524,9 @@ function applyVisibility() {
         lab.hidden = !lon;
         const i = lab.querySelector('input');
         i.disabled = !lon;
-        if (!lon) i.checked = false;
+        const sk = 'consent:' + i.value;
+        if (!lon) { if (i.checked) S.stash[sk] = true; i.checked = false; } // 形態を戻したらチェックも戻す
+        else if (S.stash[sk]) { i.checked = true; delete S.stash[sk]; }
       });
     }
   });
@@ -456,11 +549,16 @@ async function searchZip() {
   const wrap = S.wraps.zip;
   const old = wrap.querySelector('.ferr');
   if (old) old.remove();
-  const say = function (t) { wrap.append(el('p', { class: 'ferr', text: t })); };
+  const say = function (t) { add(wrap, el('p', { class: 'ferr', text: t })); };
   if (!/^[0-9]{3}-?[0-9]{4}$/.test(inp.value)) { say('郵便番号を半角数字で入力してください。'); return; }
   try {
-    const res = await fetch('https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + inp.value.replace('-', ''));
-    const j = await res.json();
+    const ctl = new AbortController();
+    const timer = setTimeout(function () { ctl.abort(); }, 8000);
+    let j;
+    try {
+      const res = await fetch('https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + inp.value.replace('-', ''), { signal: ctl.signal });
+      j = await res.json();
+    } finally { clearTimeout(timer); }
     if (!j.results || !j.results[0]) { say('住所が見つかりませんでした。'); return; }
     const r = j.results[0];
     S.refs.pref.value = r.address1;
@@ -493,7 +591,8 @@ function addFiles(key, files) {
 function enqueueUpload(key, item) {
   item.status = 'uploading'; item.msg = '';
   renderFiles(key);
-  S.queue = S.queue.then(function () { return uploadItem(key, item); });
+  const run = function () { return uploadItem(key, item); };
+  S.queue = S.queue.then(run, run).catch(function () { /* 1回の失敗で待ち列を止めない */ });
 }
 function loadImage(file) {
   return new Promise(function (resolve, reject) {
@@ -540,6 +639,7 @@ function toBase64(blob) {
 }
 async function uploadItem(key, item) {
   if (S.files[key].indexOf(item) < 0) return;
+  if (!ensureFresh()) return;
   try {
     const p = await prepare(item);
     const b64 = await toBase64(p.blob);
@@ -548,6 +648,7 @@ async function uploadItem(key, item) {
     if (res && res.ok) { item.status = 'done'; item.id = res.fileId; item.name = res.name || p.name; item.msg = ''; }
     else { item.status = 'error'; item.msg = (res && res.message) || ''; }
   } catch (e) {
+    if (e && e.relogin) return;
     item.status = 'error';
     item.msg = e && e.message === 'size' ? 'ファイルは10MBまでです。' : '';
   }
@@ -559,9 +660,9 @@ function renderFiles(key) {
     const t = el('div', { class: 'ft' });
     if (item.status === 'done') t.textContent = '済み（' + item.name + '）';
     else {
-      t.append(item.name);
-      if (item.status === 'uploading') t.append(el('span', { class: 'fm', text: '送信中…' }));
-      if (item.status === 'error' && item.msg) t.append(el('span', { class: 'fm', text: item.msg }));
+      add(t, item.name);
+      if (item.status === 'uploading') add(t, el('span', { class: 'fm', text: '送信中…' }));
+      if (item.status === 'error' && item.msg) add(t, el('span', { class: 'fm', text: item.msg }));
     }
     return el('div', { class: 'frow' }, t,
       item.status === 'error' && item.file ? el('button', { type: 'button', class: 'retry', text: '失敗（もう一度）', onclick: function () { enqueueUpload(key, item); } }) : null,
@@ -575,31 +676,32 @@ function renderFiles(key) {
 /* ===== 検証 ===== */
 function validate() {
   const errs = [];
-  const add = function (f, msg) { errs.push({ key: f.key, label: f.label, msg: msg }); };
+  const bad = function (f, msg) { errs.push({ key: f.key, label: f.label, msg: msg }); };
   FIELDS.forEach(function (f) {
     if (!isActive(f)) return;
     if (f.type === 'file') {
       const items = S.files[f.key];
-      if (items.some(function (x) { return x.status !== 'done'; })) add(f, f.label + 'のファイルの送信が終わっていません。');
-      else if (f.req && items.length < 1) add(f, f.label + 'をアップロードしてください。');
+      if (items.some(function (x) { return x.status === 'error'; })) bad(f, 'アップロードに失敗しました。もう一度お試しいただくか、削除してください。');
+      else if (items.some(function (x) { return x.status !== 'done'; })) bad(f, f.label + 'のファイルの送信が終わっていません。');
+      else if (f.req && items.length < 1) bad(f, f.label + 'をアップロードしてください。');
       return;
     }
     const v = getValue(f);
-    if (f.type === 'check') { if (f.req && v.length < 1) add(f, f.label + 'を選択してください。'); return; }
+    if (f.type === 'check') { if (f.req && v.length < 1) bad(f, f.label + 'を選択してください。'); return; }
     if (f.type === 'consent') {
       const need = f.items.filter(function (c) { return scopeOk(c.scope || 'all', S.refs.type.value); }).length;
-      if (v.length < need) add(f, f.label + 'のすべての項目にチェックしてください。');
+      if (v.length < need) bad(f, f.label + 'のすべての項目にチェックしてください。');
       return;
     }
-    const s = String(v).trim();
-    if (!s) { if (f.req) add(f, f.label + (f.type === 'select' ? 'を選択してください。' : 'を入力してください。')); return; }
-    if (s.length > MAX_TEXT) { add(f, f.label + 'は' + MAX_TEXT.toLocaleString('ja-JP') + '字以内でご記入ください。'); return; }
-    if (f.type === 'zip' && !/^[0-9]{3}-?[0-9]{4}$/.test(s)) add(f, f.label + 'は半角数字とハイフンでご記入ください。');
-    else if (f.type === 'tel' && !/^[0-9][0-9-]{8,12}$/.test(s)) add(f, f.label + 'は半角数字とハイフンでご記入ください。');
-    else if (f.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) add(f, f.label + 'の形式をご確認ください。');
-    else if (f.type === 'num' && !(/^[0-9]+(\.[0-9]+)?$/.test(s) && parseFloat(s) > 0)) add(f, f.label + 'は0より大きい数字でご記入ください。');
-    else if (f.type === 'int' && !(/^[0-9]+$/.test(s) && parseInt(s, 10) >= 1)) add(f, f.label + 'は1以上の整数でご記入ください。');
-    else if (f.type === 'select' && f.options.indexOf(s) < 0) add(f, f.label + 'を選択してください。');
+    const s = (f.type === 'zip' || f.type === 'tel' || f.type === 'num' || f.type === 'int') ? toHalf(v).trim() : String(v).trim();
+    if (!s) { if (f.req) bad(f, f.label + (f.type === 'select' ? 'を選択してください。' : 'を入力してください。')); return; }
+    if (s.length > MAX_TEXT) { bad(f, f.label + 'は' + MAX_TEXT.toLocaleString('ja-JP') + '字以内でご記入ください。'); return; }
+    if (f.type === 'zip' && !/^[0-9]{3}-?[0-9]{4}$/.test(s)) bad(f, f.label + 'は半角数字とハイフンでご記入ください。');
+    else if (f.type === 'tel' && !/^[0-9][0-9-]{8,12}$/.test(s)) bad(f, f.label + 'は半角数字とハイフンでご記入ください。');
+    else if (f.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) bad(f, f.label + 'の形式をご確認ください。');
+    else if (f.type === 'num' && !(/^[0-9]+(\.[0-9]+)?$/.test(s) && parseFloat(s) > 0)) bad(f, f.label + 'は0より大きい数字でご記入ください。');
+    else if (f.type === 'int' && !(/^[0-9]+$/.test(s) && parseInt(s, 10) >= 1)) bad(f, f.label + 'は1以上の整数でご記入ください。');
+    else if (f.type === 'select' && f.options.indexOf(s) < 0) bad(f, f.label + 'を選択してください。');
   });
   return errs;
 }
@@ -609,7 +711,9 @@ function collect() {
     const on = isActive(f);
     if (f.type === 'file') { files[f.key] = on ? getValue(f) : []; return; }
     if (f.type === 'check' || f.type === 'consent') data[f.key] = on ? getValue(f) : [];
-    else data[f.key] = on ? String(getValue(f)).trim() : '';
+    else if (!on) data[f.key] = '';
+    else if (f.type === 'zip' || f.type === 'tel' || f.type === 'num' || f.type === 'int') data[f.key] = toHalf(getValue(f)).trim();
+    else data[f.key] = String(getValue(f)).trim();
   });
   return { data: data, files: files };
 }
@@ -632,6 +736,7 @@ function showErrors(errs) {
 let sending = false;
 async function onSubmit() {
   if (sending) return;
+  if (!ensureFresh()) return;
   const box = document.getElementById('errbox');
   box.hidden = true;
   document.querySelectorAll('.q.err').forEach(function (q) { q.classList.remove('err'); });
@@ -641,6 +746,8 @@ async function onSubmit() {
   const btn = document.getElementById('submitBtn');
   const label = btn.textContent;
   sending = true; btn.disabled = true; btn.textContent = '送信中...';
+  const allset = document.getElementById('allset');
+  allset.disabled = true; // 送信中は入力欄・ファイル操作を全部止める
   try {
     const res = await api('submit', { mode: S.mode, data: c.data, files: c.files });
     if (res && res.ok) { showDone(res); return; }
@@ -649,10 +756,13 @@ async function onSubmit() {
         const f = FIELD[x.field];
         return { key: x.field, label: f ? f.label : '', msg: x.message || (f ? f.label : '') };
       }));
+    } else if (res && res.error === 'alreadyApplied') {
+      showErrors([{ key: '', label: '', msg: 'すでにご応募いただいています。このページを開き直すと、内容の確認・変更ができます。' }]);
     } else showErrors([{ key: '', label: '', msg: (res && res.message) || '送信に失敗しました。もう一度お試しください。' }]);
   } catch (e) {
+    if (e && e.relogin) return;
     showErrors([{ key: '', label: '', msg: '通信に失敗しました。電波の良いところで、もう一度お試しください。' }]);
-  } finally { sending = false; btn.disabled = false; btn.textContent = label; }
+  } finally { sending = false; btn.disabled = false; btn.textContent = label; allset.disabled = S.readonly; }
 }
 function showDone(res) {
   const st = S.ctx;

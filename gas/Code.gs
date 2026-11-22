@@ -261,6 +261,15 @@ function installTriggers() {
 function cleanupTemp() {
   var tempId = prop_('TEMP_FOLDER_ID');
   if (!tempId) return 0;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) { Logger.log('cleanupTemp: ロックが取れないので今日は何もしない'); return 0; }
+  try {
+    return cleanupTempLocked_(tempId);
+  } finally {
+    lock.releaseLock();
+  }
+}
+function cleanupTempLocked_(tempId) {
   var limit = new Date().getTime() - TEMP_MAX_AGE_MS;
   var n = 0;
   driveList_("'" + esc_(tempId) + "' in parents and trashed = false").forEach(function (f) {
@@ -531,11 +540,15 @@ function actionSubmit_(who, body) {
   var errors = v.errors.concat(f.errors);
   if (errors.length) return invalid_(errors);
 
+  /* ファイルの持ち主確認（Drive の get）はロックの外で先にやる */
+  var pre = prepareFiles_(who, mode, f.ids);
+  if (pre.error) return pre.error;
+
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (x) { return err_('busy', '混み合っています。しばらくしてからもう一度お試しください。'); }
   var res;
   try {
-    res = submitLocked_(who, mode, v.out, f.ids, body);
+    res = submitLocked_(who, mode, v.out, f.ids, body, pre);
   } finally {
     lock.releaseLock();
   }
@@ -546,6 +559,50 @@ function actionSubmit_(who, body) {
   }
   return res;
 }
+function isOwnFile_(info, sub, parents) {
+  if (!info || info.trashed || info.description !== 'owner:' + sub || ALLOWED_MIME.indexOf(info.mimeType) < 0) return false;
+  return (info.parents || []).some(function (p) { return p && parents.indexOf(p) >= 0; });
+}
+/** ロックの外：応募済みの確認・ファイルの持ち主と置き場所の確認。 */
+function prepareFiles_(who, mode, idsByField) {
+  var sub = who.sub;
+  var existing = prop_('applied:' + sub);
+  if (mode === 'new' && existing) return { error: err_('alreadyApplied', 'すでにご応募いただいています。このページを開き直してください。') };
+  if (mode === 'update' && !existing) return { error: err_('notApplied', 'ご応募が確認できませんでした。') };
+  var tempId = prop_('TEMP_FOLDER_ID');
+  var pre = { existing: existing, entryFolderId: '', oldIds: [], infos: {}, preserve: {}, oldInfo: {} };
+  if (mode === 'update') {
+    var sh = getSheet_();
+    var headers = ensureHeaders_(sh);
+    var row = findRow_(sh, headers, existing);
+    if (!row) return { error: err_('rowNotFound', 'ご応募内容を読み込めませんでした。運営までお問い合わせください。') };
+    pre.entryFolderId = prop_('folder:' + existing);
+    var old = rowToEntry_(headers, sh.getRange(row, 1, 1, headers.length).getValues()[0]);
+    Object.keys(old.files).forEach(function (k) { pre.oldIds = pre.oldIds.concat(old.files[k]); });
+  }
+  var parents = [tempId];
+  if (pre.entryFolderId) parents.push(pre.entryFolderId);
+  var fileErrors = [], finalSet = {};
+  fileFields_().forEach(function (fld) {
+    (idsByField[fld.key] || []).forEach(function (id) {
+      finalSet[id] = true;
+      var info = null;
+      try { info = driveGet_(id); } catch (x) { info = null; }
+      if (isOwnFile_(info, sub, parents)) pre.infos[id] = info;
+      else if (pre.oldIds.indexOf(id) >= 0) pre.preserve[id] = true; // シートに元からある他人・不明のファイルは触らずそのまま残す
+      else fileErrors.push({ field: fld.key, message: fld.label + 'のファイルを確認できませんでした。もう一度アップロードしてください。' });
+    });
+  });
+  if (fileErrors.length) return { error: invalid_(fileErrors) };
+  /* 外されるファイル：本人のもので、本人の応募フォルダにあるものだけ動かす */
+  pre.oldIds.forEach(function (id) {
+    if (finalSet[id] || !pre.entryFolderId) return;
+    var info = null;
+    try { info = driveGet_(id); } catch (x) { return; }
+    if (isOwnFile_(info, sub, [pre.entryFolderId])) pre.oldInfo[id] = info;
+  });
+  return pre;
+}
 function issueReceiptNo_() {
   var n = parseInt(prop_('SEQ') || '0', 10) + 1;
   setProp_('SEQ', String(n));
@@ -554,39 +611,79 @@ function issueReceiptNo_() {
 function safeFolderName_(receiptNo, shop) {
   return (receiptNo + ' ' + String(shop).replace(/[\r\n\t\/\\]/g, ' ')).slice(0, 120);
 }
-function submitLocked_(who, mode, v, idsByField, body) {
+/** 受付番号の列で最後に埋まっている行の次（運営がその下に書いたメモの行には引きずられない）。 */
+function nextRow_(sh, headers) {
+  var col = headers.indexOf(FIXED_LABELS.receiptNo);
+  var last = sh.getLastRow(), r = 1;
+  if (col >= 0 && last >= 2) {
+    var vals = sh.getRange(2, col + 1, last - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) if (String(vals[i][0]) !== '') r = i + 2;
+  }
+  return r + 1;
+}
+/** 先頭が = + - @ ' の文字は、先頭に ' を付けて書く（Sheets は ' を表示せず、読むときも返さない）。 */
+function sheetText_(v) {
+  var s = v == null ? '' : String(v);
+  return /^['=+\-@]/.test(s) ? "'" + s : s;
+}
+/** フォームが持つ列・固定列（cells のキー）だけを書く。連続する列ごとにまとめて書き、運営の列には値も書式も触らない。 */
+function writeCells_(sh, row, headers, cells) {
+  var cols = [];
+  Object.keys(cells).forEach(function (l) {
+    var i = headers.indexOf(l);
+    if (i >= 0) cols.push({ col: i + 1, val: cells[l] });
+  });
+  cols.sort(function (a, b) { return a.col - b.col; });
+  var written = [], i = 0;
+  while (i < cols.length) {
+    var j = i;
+    while (j + 1 < cols.length && cols[j + 1].col === cols[j].col + 1) j++;
+    var rng = sh.getRange(row, cols[i].col, 1, j - i + 1);
+    var old = rng.getValues()[0];
+    for (var k = 0; k <= j - i; k++) written.push({ row: row, col: cols[i].col + k, old: old[k] });
+    rng.setNumberFormat('@');
+    rng.setValues([cols.slice(i, j + 1).map(function (c) { return sheetText_(c.val); })]);
+    i = j + 1;
+  }
+  return written;
+}
+function restoreCells_(sh, written) {
+  written.slice().reverse().forEach(function (w) {
+    try { sh.getRange(w.row, w.col).setValue(sheetText_(w.old)); } catch (x) { /* できる範囲で戻す */ }
+  });
+}
+/** ロックの中：応募済みの確認・番号・移動・書き込み・印だけ。 */
+function submitLocked_(who, mode, v, idsByField, body, pre) {
   var sub = who.sub;
   var existing = prop_('applied:' + sub);
   if (mode === 'new' && existing) return err_('alreadyApplied', 'すでにご応募いただいています。このページを開き直してください。');
-  if (mode === 'update' && !existing) return err_('notApplied', 'ご応募が確認できませんでした。');
-
+  if (mode === 'update') {
+    if (!existing) return err_('notApplied', 'ご応募が確認できませんでした。');
+    if (existing !== pre.existing) return err_('busy', '混み合っています。しばらくしてからもう一度お試しください。');
+  }
   var sh = getSheet_();
   var headers = ensureHeaders_(sh);
-  var tempId = prop_('TEMP_FOLDER_ID'), rootId = prop_('ROOT_FOLDER_ID');
-  var row = 0, entryFolderId = '', oldIds = [], receiptNo = existing;
+  var rootId = prop_('ROOT_FOLDER_ID');
+  var row = 0, entryFolderId = pre.entryFolderId, receiptNo = existing;
   if (mode === 'update') {
     row = findRow_(sh, headers, existing);
     if (!row) return err_('rowNotFound', 'ご応募内容を読み込めませんでした。運営までお問い合わせください。');
-    entryFolderId = prop_('folder:' + existing);
-    var old = rowToEntry_(headers, sh.getRange(row, 1, 1, headers.length).getValues()[0]);
-    Object.keys(old.files).forEach(function (k) { oldIds = oldIds.concat(old.files[k]); });
-  }
+  } else row = nextRow_(sh, headers);
 
-  /* ファイルの持ち主・置き場所を確かめる（他人のファイルIDを使えないように） */
-  var infos = {}, fileErrors = [];
+  /* 動かす直前に、ゴミ箱に入っていないかだけ確かめ直す */
+  var fresh = {}, trashedErrors = [];
   fileFields_().forEach(function (fld) {
     (idsByField[fld.key] || []).forEach(function (id) {
+      if (pre.preserve[id]) return;
       var info = null;
       try { info = driveGet_(id); } catch (x) { info = null; }
-      var okParent = info && info.parents && (info.parents.indexOf(tempId) >= 0 || (entryFolderId && info.parents.indexOf(entryFolderId) >= 0));
-      if (!info || info.trashed || info.description !== 'owner:' + sub || !okParent || ALLOWED_MIME.indexOf(info.mimeType) < 0) {
-        fileErrors.push({ field: fld.key, message: fld.label + 'のファイルを確認できませんでした。もう一度アップロードしてください。' });
-      } else infos[id] = info;
+      if (!info || info.trashed) trashedErrors.push({ field: fld.key, message: fld.label + 'のファイルを確認できませんでした。もう一度アップロードしてください。' });
+      else fresh[id] = info;
     });
   });
-  if (fileErrors.length) return invalid_(fileErrors);
+  if (trashedErrors.length) return invalid_(trashedErrors);
 
-  var journal = [], createdFolder = '';
+  var journal = [], createdFolder = '', written = [];
   try {
     if (mode === 'new') {
       receiptNo = issueReceiptNo_();
@@ -597,14 +694,10 @@ function submitLocked_(who, mode, v, idsByField, body) {
       driveEnsureRename_(entryFolderId, safeFolderName_(receiptNo, v.shop));
     }
     /* 外されたファイルは消さずに 差し替え前 へ */
-    var finalIds = {};
-    fileFields_().forEach(function (fld) { (idsByField[fld.key] || []).forEach(function (id) { finalIds[id] = true; }); });
     var replacedId = '';
-    oldIds.forEach(function (id) {
-      if (finalIds[id]) return;
+    Object.keys(pre.oldInfo).forEach(function (id) {
+      var info = pre.oldInfo[id];
       if (!replacedId) replacedId = driveEnsureFolder_(REPLACED_FOLDER_NAME, entryFolderId).id;
-      var info = null;
-      try { info = driveGet_(id); } catch (x) { return; }
       driveMove_(id, info.parents, replacedId, null);
       journal.push({ id: id, parents: info.parents, name: info.name, to: replacedId });
     });
@@ -612,7 +705,8 @@ function submitLocked_(who, mode, v, idsByField, body) {
     var finalFiles = {};
     fileFields_().forEach(function (fld) {
       finalFiles[fld.key] = (idsByField[fld.key] || []).map(function (id, i) {
-        var info = infos[id];
+        if (pre.preserve[id]) return { id: id, name: id };
+        var info = fresh[id];
         var nm = fld.label + '_' + (i + 1) + '.' + extOf_(info.name, info.mimeType);
         if (info.parents.indexOf(entryFolderId) < 0 || info.name !== nm) {
           driveMove_(id, info.parents, entryFolderId, nm);
@@ -630,19 +724,12 @@ function submitLocked_(who, mode, v, idsByField, body) {
       cells[FIXED_LABELS.updatedAt] = '';
       cells[FIXED_LABELS.lineUserId] = sub;
       cells[FIXED_LABELS.lineName] = name;
-      var rowVals = headers.map(function (h) { return cells[h] !== undefined ? cells[h] : ''; });
-      var r = sh.getLastRow() + 1;
-      var rng = sh.getRange(r, 1, 1, headers.length);
-      rng.setNumberFormat('@');
-      rng.setValues([rowVals]);
     } else {
       cells[FIXED_LABELS.updatedAt] = nowText_();
       if (name) cells[FIXED_LABELS.lineName] = name;
-      Object.keys(cells).forEach(function (label) {
-        var idx = headers.indexOf(label);
-        if (idx >= 0) sh.getRange(row, idx + 1).setNumberFormat('@').setValue(cells[label]);
-      });
     }
+    written = writeCells_(sh, row, headers, cells);
+    SpreadsheetApp.flush(); // 書き込みのエラーをここで catch に入れる（印を付ける前）
     if (mode === 'new') {
       setProp_('folder:' + receiptNo, entryFolderId);
       setProp_('applied:' + sub, receiptNo);
@@ -652,6 +739,7 @@ function submitLocked_(who, mode, v, idsByField, body) {
     return { ok: true, receiptNo: receiptNo, updated: mode === 'update', _line: { text: buildLineText_(v, counts, receiptNo, mode === 'update') } };
   } catch (x) {
     Logger.log('submit failed: ' + (x && x.message));
+    restoreCells_(sh, written); // new は書いた行を空に、update は元の値に戻す
     journal.reverse().forEach(function (j) {
       try { driveMove_(j.id, [j.to], j.parents[0], j.name); } catch (y) { /* できる範囲で戻す */ }
     });

@@ -21,6 +21,7 @@ Code.gs のいちばん上: `DEADLINE` / `DEADLINE_TEXT` / `RESULT_DATE_TEXT`（
 自動で入るもの: `ROOT_FOLDER_ID` `TEMP_FOLDER_ID` `SHEET_ID` `SEQ` `applied:<sub>` `folder:<受付番号>` `LINE_LAST_RESULT`
 
 ## 立ち上げ手順（親がやる）
+0. 前提：デプロイする人は共有ドライブ「11_飲食出店者」でコンテンツ管理者以上。LINEログインチャネルと Messaging API チャネルは同じプロバイダー（Symphonic）に置く（違うとフォームで取ったユーザーIDに公式LINEから送れない）
 1. Apps Script に Code.gs・appsscript.json を置く（Drive v3 の拡張サービスが有効になる）
 2. スクリプトプロパティに上の値を入れる
 3. `setup()` を1回実行（フォルダ「飲食出店 応募フォームの回答」＋「一時保管」＋シートができる。何度実行しても増えない）
