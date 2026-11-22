@@ -1,1 +1,672 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>準備中</title></head><body><p>準備中です。</p></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Symphonic Starmine 2027 飲食出店 応募フォーム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --lake:#0d2a2e; --gold:#c9a24a; --red:#c0392b; --line:#cfd6dc; --sub:#56616d; --bg:#fff;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:#1b2530;font:400 15px/1.7 "Noto Sans JP",system-ui,sans-serif}
+#app{max-width:480px;margin:0 auto;padding:0 16px 56px}
+.top{background:var(--lake);color:#fff;margin:0 -16px;padding:18px 16px;border-bottom:2px solid var(--gold)}
+.top h1{margin:0;font-size:17px;font-weight:700;line-height:1.5}
+.msg{padding:40px 0;text-align:left}
+.msg p{margin:0 0 12px}
+.msg .small{font-size:13px;color:var(--sub)}
+.intro{margin:20px 0 8px}
+.intro p{margin:0 0 6px}
+.banner{margin:20px 0 0;padding:12px 14px;border:1px solid var(--lake);border-radius:8px}
+.banner p{margin:0}
+.banner .rno{font-weight:700;margin-top:4px}
+.sec{background:var(--lake);color:#fff;margin:28px -16px 12px;padding:10px 16px;font-size:16px;font-weight:700;border-left:0}
+.block[hidden]{display:none}
+fieldset{border:0;margin:0;padding:0;min-width:0}
+.q{border:1px solid transparent;border-radius:8px;padding:8px;margin:0 -8px 4px}
+.q[hidden]{display:none}
+.q.err{border-color:var(--red)}
+.qh{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-weight:500}
+.ql{font-weight:500}
+.badge{flex:none;font-size:11px;line-height:1;padding:3px 6px;border-radius:4px;font-weight:700}
+.badge.req{background:var(--red);color:#fff}
+.badge.opt{background:#e6eaee;color:var(--sub)}
+.note{font-size:13px;color:#56616d;margin:4px 0 0}
+.qh + .note{margin:-2px 0 6px}
+input[type=text],input[type=tel],input[type=email],select,textarea{
+  display:block;width:100%;height:48px;padding:0 12px;border:1px solid var(--line);border-radius:8px;
+  background:#fff;color:inherit;font:400 16px/1.4 "Noto Sans JP",system-ui,sans-serif;appearance:none;-webkit-appearance:none}
+textarea{height:auto;min-height:104px;padding:10px 12px;resize:vertical}
+select{padding-right:36px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%230d2a2e' stroke-width='1.6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+input:focus,select:focus,textarea:focus{outline:1px solid var(--lake);border-color:var(--lake)}
+input:disabled,select:disabled,textarea:disabled{background:#f4f6f8;color:#3a4650;-webkit-text-fill-color:#3a4650;opacity:1}
+.row{display:flex;gap:8px}
+.row input{flex:1;min-width:0}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;height:52px;border:0;border-radius:10px;background:var(--lake);color:#fff;font:700 16px/1 "Noto Sans JP",system-ui,sans-serif;text-decoration:none;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.sm{width:auto;height:48px;padding:0 14px;font-size:14px;flex:none}
+.btn.link{display:inline-flex;width:auto;padding:0 24px}
+.checks label{display:flex;align-items:flex-start;gap:10px;padding:8px 0;font-size:15px}
+.checks input{flex:none;width:20px;height:20px;margin:3px 0 0;accent-color:var(--lake)}
+.checks label[hidden]{display:none}
+.subh{margin:20px 0 8px;padding-top:12px;border-top:1px solid var(--gold)}
+.subh h3{margin:0 0 4px;font-size:15px;font-weight:700}
+.subh p{margin:0;font-size:13px;color:var(--sub)}
+.warn{background:#fff6d6;border:1px solid #e0c460;color:#5c4a00;font-size:13px;padding:8px 10px;border-radius:8px;margin-top:6px}
+.warn[hidden]{display:none}
+.flist{margin-top:8px}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-top:6px;font-size:14px}
+.frow .ft{flex:1;min-width:0;word-break:break-all}
+.frow .fm{display:block;font-size:12px;color:var(--sub)}
+.frow button{flex:none;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 10px;font:500 13px "Noto Sans JP",system-ui,sans-serif;color:#1b2530;cursor:pointer}
+.frow button.retry{border-color:var(--red);color:var(--red)}
+.ro .frow button{display:none}
+.ferr{font-size:13px;color:var(--red);margin:6px 0 0}
+input[type=file]{height:auto;padding:10px 12px;font-size:14px}
+.errbox{border:1px solid var(--red);border-radius:8px;padding:12px 14px;margin:24px 0 12px;color:var(--red)}
+.errbox[hidden]{display:none}
+.errbox b{display:block;margin-bottom:4px}
+.errbox ul{margin:0;padding-left:18px}
+.errbox li{margin:2px 0}
+.submit{margin-top:24px}
+.submit .note{margin-top:12px}
+.done h2{margin:28px 0 12px;font-size:19px}
+.done p{margin:0 0 10px}
+.done .rno{font-weight:700;font-size:17px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top"><h1>Symphonic Starmine 2027 飲食出店 応募フォーム</h1></header>
+  <main id="view"></main>
+</div>
+
+<script type="application/json" id="schema">{"types":{"car":"キッチンカー","tent":"テント（半張り）"},"sections":[{"id":"s1","title":"出店者情報","scope":"all","items":[{"key":"company","label":"会社名（団体名）","type":"text","req":true,"scope":"all","sec":"s1"},{"key":"shop","label":"店舗名（屋号）","type":"text","req":true,"note":"会場マップ・公式サイトに掲載する名称をご記入ください。","scope":"all","sec":"s1"},{"key":"rep","label":"代表者名","type":"text","req":true,"scope":"all","sec":"s1"},{"key":"contact","label":"当日担当者","type":"text","req":true,"scope":"all","sec":"s1"},{"key":"zip","label":"郵便番号","type":"zip","req":true,"note":"例：525-0001","scope":"all","sec":"s1"},{"key":"pref","label":"都道府県","type":"select","req":true,"options":["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"],"scope":"all","sec":"s1"},{"key":"city","label":"市町村","type":"text","req":true,"scope":"all","sec":"s1"},{"key":"addr","label":"町名番地","type":"text","req":true,"note":"建物名・部屋番号までご記入ください。","scope":"all","sec":"s1"},{"key":"tel","label":"電話番号","type":"tel","req":true,"note":"例：077-000-0000","scope":"all","sec":"s1"},{"key":"email","label":"メールアドレス","type":"email","req":true,"scope":"all","sec":"s1"},{"key":"invoiceTo","label":"出店料請求書の宛名","type":"text","req":true,"scope":"all","sec":"s1"},{"key":"invoiceNo","label":"インボイス登録番号","type":"text","req":false,"note":"お持ちの場合のみご記入ください。例：T1234567890123","scope":"all","sec":"s1"},{"key":"dayMobile","label":"当日担当者の携帯番号","type":"tel","req":true,"note":"開催当日につながる番号をご記入ください。例：090-0000-0000","scope":"all","sec":"s1"},{"key":"type","label":"出店形態","type":"select","req":true,"options":["キッチンカー","テント（半張り）"],"scope":"all","sec":"s1"}]},{"id":"s2","title":"キッチンカーの情報","scope":"car","items":[{"key":"carLen","label":"車両の全長（m）","type":"num","req":true,"note":"車検証をもとにご記入ください。例：5.2","limit":6,"scope":"car","sec":"s2"},{"key":"carWid","label":"車両の幅（m）","type":"num","req":true,"note":"例：1.9","limit":2.5,"scope":"car","sec":"s2"},{"key":"carHei","label":"車両の高さ（m）","type":"num","req":true,"note":"例：2.8","limit":3.5,"scope":"car","sec":"s2"},{"kind":"note","text":"規定サイズ：全長6m×全幅2.5m×全高3.5m。規定サイズを超える車両での販売はできません。"},{"key":"carPlate","label":"車両ナンバー","type":"text","req":true,"note":"例：滋賀 800 さ 12-34","scope":"car","sec":"s2"},{"key":"genUse","label":"発電機","type":"select","req":true,"options":["持ち込む","持ち込まない"],"note":"会場からの電力供給はありません。","scope":"car","sec":"s2"},{"key":"genKva","label":"発電機の出力（kVA）","type":"num","req":true,"note":"例：2.8","when":{"key":"genUse","eq":"持ち込む"},"scope":"car","sec":"s2"},{"key":"genFuel","label":"発電機の燃料","type":"select","req":true,"options":["ガソリン","軽油","その他"],"when":{"key":"genUse","eq":"持ち込む"},"scope":"car","sec":"s2"},{"key":"genFuelOther","label":"発電機の燃料（その他）","type":"text","req":true,"when":{"key":"genFuel","eq":"その他"},"scope":"car","sec":"s2"},{"key":"carLpg","label":"LPガスの使用","sheet":"LPガスの使用（キッチンカー）","type":"select","req":true,"options":["使う","使わない"],"scope":"car","sec":"s2"},{"key":"carExtra","label":"追加車両","type":"select","req":true,"options":["なし","あり（2台目）"],"note":"2台目が必要な店舗は、別途DAY1：2,000円・DAY2：6,000円（税込）で指定駐車場に駐車していただきます。（3台目以降は不可）","scope":"car","sec":"s2"},{"kind":"heading","title":"提出書類（キッチンカー）","text":"キッチンカーの写真、車内の配置図、営業許可証の写しをご提出ください。"},{"key":"file_car_photo","label":"キッチンカーの写真","type":"file","req":true,"scope":"car","sec":"s2"},{"key":"file_car_layout","label":"車内の配置図","type":"file","req":true,"scope":"car","sec":"s2"},{"key":"file_car_permit","label":"営業許可証の写し","type":"file","req":true,"scope":"car","sec":"s2"}]},{"id":"s3","title":"テント（半張り）の情報","scope":"tent","items":[{"key":"menuProcess","label":"メニューごとのメニュー名と簡単な調理工程","type":"area","req":true,"note":"保健所への申請に使用します。例：唐揚げ … 仕込み済みの鶏肉を会場で揚げて提供","scope":"tent","sec":"s3"},{"key":"fire","label":"火気の使用","type":"select","req":true,"options":["使う","使わない"],"scope":"tent","sec":"s3"},{"key":"tentLpg","label":"LPガスの使用","sheet":"LPガスの使用（テント）","type":"select","req":true,"options":["使う","使わない"],"scope":"tent","sec":"s3"},{"key":"tentCars","label":"搬入で使用する車の台数","type":"select","req":true,"options":["1台","2台"],"note":"2台目が必要な店舗は、別途DAY1：2,000円・DAY2：6,000円（税込）で指定駐車場に駐車していただきます。（3台目以降は不可）","scope":"tent","sec":"s3"},{"key":"tentCarKinds","label":"搬入で使用する車の種類","type":"check","req":true,"options":["トラック","乗用車"],"note":"当てはまるものをすべてお選びください。","scope":"tent","sec":"s3"},{"kind":"heading","title":"提出書類（テント）","text":"ブースの写真・イメージ（他のイベントでの出店の様子など）をご提出ください。"},{"key":"file_tent_photo","label":"ブースの写真・イメージ","type":"file","req":true,"scope":"tent","sec":"s3"}]},{"id":"s4","title":"出店内容","scope":"all","items":[{"key":"item1Name","label":"出店商品①の商品名","type":"text","req":true,"scope":"all","sec":"s4"},{"key":"item1Price","label":"出店商品①の価格（税込）","type":"text","req":true,"scope":"all","sec":"s4"},{"key":"item2Name","label":"出店商品②の商品名","type":"text","req":true,"scope":"all","sec":"s4"},{"key":"item2Price","label":"出店商品②の価格（税込）","type":"text","req":true,"scope":"all","sec":"s4"},{"key":"moreItems","label":"3品目以降の商品名と価格（税込）","type":"area","req":false,"note":"3品以上ある場合はご記入ください。","scope":"all","sec":"s4"},{"key":"staff","label":"当日のスタッフ人数","type":"int","req":true,"note":"3名までが規定です。スタッフ追加は別途1人につき、DAY1：3,000円・DAY2：5,000円（税込）となります。","scope":"all","sec":"s4"},{"key":"cashless","label":"使用できるキャッシュレス決済","type":"check","req":true,"options":["PayPay","クレジットカード","交通系IC","その他"],"note":"PayPayの導入は必須です（決済用QRをご用意ください）。","scope":"all","sec":"s4"},{"key":"cashlessOther","label":"使用できるキャッシュレス決済（その他）","type":"text","req":true,"when":{"key":"cashless","has":"その他"},"scope":"all","sec":"s4"},{"key":"history","label":"主な出店実績","type":"area","req":false,"note":"イベント名と時期をご記入ください。","scope":"all","sec":"s4"},{"key":"pr","label":"店舗のPR文","type":"area","req":false,"note":"公式サイト・SNSでご紹介する際に使用します。","scope":"all","sec":"s4"},{"kind":"heading","title":"提出書類","text":"メインメニューの写真、PL保険（生産物賠償責任保険）の保険証の写しをご提出ください。"},{"key":"file_menu_photo","label":"メインメニューの写真","type":"file","req":true,"scope":"all","sec":"s4"},{"key":"file_pl","label":"PL保険証の写し","type":"file","req":true,"scope":"all","sec":"s4"},{"key":"consents","label":"同意事項","type":"consent","req":true,"note":"すべての項目にチェックしてください。","items":[{"text":"募集要項の内容を確認し、同意します"},{"text":"2日間とも出店します"},{"text":"ドリンク・アルコール類は販売しません"},{"text":"ファストパス（限定テラスシート・プレミアムオプションの特典）をご提示のお客様に、列に関係なく最優先で販売します"},{"text":"生産物賠償責任保険（PL保険）に加入しています"},{"text":"製造5年以内の消火器を設置します"},{"text":"出店者およびその従業員は、暴力団、暴力団員、暴力団関係企業・団体またはその関係者、その他反社会的勢力ではありません"},{"text":"滋賀県草津市で有効な食品営業許可証を得た移動販売車を保有しています","scope":"car"}],"scope":"all","sec":"s4"},{"key":"inquiry","label":"ご質問等ございましたらご記入ください。","type":"area","req":false,"scope":"all","sec":"s4"}]}]}</script>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* ===== 設定値 ===== */
+const LIFF_ID = '';
+const API_URL = '';
+const ADD_FRIEND_URL = 'https://lin.ee/OSrDrX3';
+
+/* ===== 定数 ===== */
+const SCHEMA = JSON.parse(document.getElementById('schema').textContent);
+const TYPE_CAR = SCHEMA.types.car;
+const TYPE_TENT = SCHEMA.types.tent;
+const MAX_FILES = 3;
+const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_TEXT = 2000;
+const MIME_BY_EXT = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', pdf: 'application/pdf' };
+const ALLOWED_MIME = Object.values(MIME_BY_EXT);
+const params = new URLSearchParams(location.search);
+const IS_LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const MOCK = IS_LOCAL && params.get('mock') === '1';
+const MOCK_STATE = params.get('state') || 'new';
+
+const FIELDS = [];
+SCHEMA.sections.forEach(function (s) { s.items.forEach(function (f) { if (f.key) FIELDS.push(f); }); });
+const FIELD = {};
+FIELDS.forEach(function (f) { FIELD[f.key] = f; });
+
+const S = { ctx: null, mode: 'new', readonly: false, receiptNo: '', files: {}, refs: {}, wraps: {}, queue: Promise.resolve(), timedOut: false, uid: 0 };
+const view = document.getElementById('view');
+
+/* ===== 小さな道具 ===== */
+function el(tag, attrs) {
+  const e = document.createElement(tag);
+  if (attrs) {
+    Object.keys(attrs).forEach(function (k) {
+      const v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') e.className = v;
+      else if (k === 'text') e.textContent = v;
+      else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : v);
+    });
+  }
+  for (let i = 2; i < arguments.length; i++) {
+    [].concat(arguments[i]).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    });
+  }
+  return e;
+}
+function show() { view.replaceChildren.apply(view, [].concat.apply([], [].slice.call(arguments))); window.scrollTo(0, 0); }
+function showMsg(text, sub) {
+  show(el('div', { class: 'msg' }, el('p', { text: text }), sub ? el('p', { class: 'small', text: sub }) : null));
+}
+function toHalf(s) {
+  return String(s).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/[－−‐‑–—―ー]/g, '-');
+}
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+/* ===== LIFF / API（本物とにせ物） ===== */
+function mockLiff() {
+  return {
+    init: function () { return Promise.resolve(); },
+    isLoggedIn: function () { return true; },
+    login: function () {},
+    getProfile: function () {
+      if (MOCK_STATE === 'error') return Promise.reject(new Error('mock'));
+      return Promise.resolve({ userId: 'Umock', displayName: 'モック太郎' });
+    },
+    getIDToken: function () { return 'mock-id-token'; },
+    getFriendship: function () { return Promise.resolve({ friendFlag: MOCK_STATE !== 'notFriend' }); }
+  };
+}
+const mockEntry = {
+  receiptNo: 'SS27-MOCK-0000-01',
+  data: {
+    company: '株式会社モック', shop: 'モックキッチン', rep: '滋賀 太郎', contact: '草津 花子', zip: '525-0001',
+    pref: '滋賀県', city: '草津市', addr: '烏丸町1-1', tel: '077-000-0000', email: 'mock@example.com',
+    invoiceTo: '株式会社モック', invoiceNo: '', dayMobile: '090-0000-0000', type: 'キッチンカー',
+    carLen: '5.2', carWid: '1.9', carHei: '2.8', carPlate: '滋賀 800 さ 12-34', genUse: '持ち込む', genKva: '2.8',
+    genFuel: 'ガソリン', genFuelOther: '', carLpg: '使う', carExtra: 'なし',
+    item1Name: 'からあげ', item1Price: '600円', item2Name: 'ポテト', item2Price: '400円', moreItems: '', staff: '2',
+    cashless: ['PayPay', 'その他'], cashlessOther: '楽天ペイ', history: '', pr: '', consents: SCHEMA.sections[3].items.filter(function (f) { return f.key === 'consents'; })[0].items.map(function (c) { return c.text; }), inquiry: ''
+  },
+  files: {
+    file_car_photo: [{ id: 'mockfile00001', name: 'キッチンカーの写真_1.jpg' }],
+    file_car_layout: [{ id: 'mockfile00002', name: '車内の配置図_1.jpg' }],
+    file_car_permit: [{ id: 'mockfile00003', name: '営業許可証の写し_1.pdf' }],
+    file_menu_photo: [{ id: 'mockfile00004', name: 'メインメニューの写真_1.jpg' }],
+    file_pl: [{ id: 'mockfile00005', name: 'PL保険証の写し_1.pdf' }]
+  }
+};
+function mockApi(p) {
+  const base = { deadlineText: '【モック】締切日時', resultDateText: '【モック】発表日' };
+  return wait(250).then(function () {
+    if (p.action === 'status') {
+      const closed = MOCK_STATE === 'closed' || MOCK_STATE === 'closedApplied';
+      const applied = MOCK_STATE === 'applied' || MOCK_STATE === 'closedApplied';
+      const r = Object.assign({ ok: true, closed: closed, applied: applied, canEdit: applied && !closed }, base);
+      if (applied) r.entry = mockEntry;
+      return r;
+    }
+    if (p.action === 'upload') return { ok: true, fileId: 'mock' + Date.now() + Math.floor(Math.random() * 1000), name: p.name };
+    if (p.action === 'submit') {
+      return { ok: true, receiptNo: p.mode === 'update' ? 'SS27-MOCK-0000-01' : 'SS27-MOCK-0001-01', updated: p.mode === 'update' };
+    }
+    return { ok: false, error: 'badRequest', message: 'モックでは未対応です。' };
+  });
+}
+const L = MOCK ? mockLiff() : window.liff;
+async function api(action, payload) {
+  const body = Object.assign({ action: action, idToken: L.getIDToken() }, payload || {});
+  if (MOCK) return mockApi(body);
+  const ctl = new AbortController();
+  const timer = setTimeout(function () { ctl.abort(); }, 120000);
+  try {
+    const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), signal: ctl.signal });
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
+/* ===== 起動 ===== */
+async function boot() {
+  const timer = setTimeout(function () { S.timedOut = true; showMsg('タイムアウトしました。開き直してください'); }, 10000);
+  let stage = 'init';
+  try {
+    showMsg('読み込み中です...');
+    if (!MOCK && (!LIFF_ID || !API_URL)) { clearTimeout(timer); showMsg('設定が終わっていません'); return; }
+    await L.init(MOCK ? undefined : { liffId: LIFF_ID });
+    stage = 'login';
+    if (!L.isLoggedIn()) { L.login(); return; }
+    stage = 'profile';
+    await L.getProfile();
+    if (!L.getIDToken()) throw new Error('no id token');
+    stage = 'friendship';
+    const fr = await L.getFriendship();
+    if (S.timedOut) return;
+    if (!fr || !fr.friendFlag) { clearTimeout(timer); return showNotFriend(); }
+    stage = 'status';
+    const st = await api('status');
+    if (S.timedOut) return;
+    clearTimeout(timer);
+    if (!st || !st.ok) { showMsg((st && st.message) || '読み込みに失敗しました。開き直してください', '段階：status'); return; }
+    S.ctx = st;
+    route(st);
+  } catch (e) {
+    clearTimeout(timer);
+    if (S.timedOut) return;
+    showMsg('読み込みに失敗しました。開き直してください', '段階：' + stage);
+  }
+}
+function showNotFriend() {
+  show(el('div', { class: 'msg' },
+    el('p', { text: 'ご応募には公式LINE『飲食出店窓口Symphonic』の友だち登録が必要です。' }),
+    el('p', null, el('a', { class: 'btn link', href: ADD_FRIEND_URL, text: '友だち追加する' })),
+    el('p', { text: '友だち追加のあと、このページを開き直してください。' })));
+}
+function route(st) {
+  if (st.closed && !st.applied) { showMsg('応募の受付は終了しました。'); return; }
+  S.mode = st.applied ? 'update' : 'new';
+  S.readonly = !!st.closed;
+  S.receiptNo = st.entry ? st.entry.receiptNo : '';
+  renderForm(st);
+}
+
+/* ===== フォームの組み立て ===== */
+function intro(st) {
+  return el('div', { class: 'intro' },
+    el('p', { text: 'Symphonic Starmine 2027 の飲食出店者を募集します。' }),
+    el('p', { text: '■ 開催日：2027年5月7日（金）・8日（土）の2日間' }),
+    el('p', { text: '■ 会場：滋賀県草津市 烏丸半島芝生広場' }),
+    el('p', { text: '■ 募集する出店形態：キッチンカー／テント（半張り）' }),
+    el('p', { text: '■ 主催：Biwako Live Art Association' }),
+    el('p', { text: '■ 応募締切：' + st.deadlineText }),
+    el('p', { text: '■ 選考結果：' + st.resultDateText + '中に公式LINEでご連絡します。' }),
+    el('p', { text: '出店料・出店条件は、募集要項をご確認ください。' }));
+}
+function badge(f) { return el('span', { class: 'badge ' + (f.req ? 'req' : 'opt'), text: f.req ? '必須' : '任意' }); }
+function noteEl(f) { return f.note ? el('p', { class: 'note', text: f.note }) : null; }
+function head(f, forId) {
+  const lab = forId ? el('label', { class: 'ql', for: 'f_' + f.key, text: f.label }) : el('span', { class: 'ql', text: f.label });
+  return el('div', { class: 'qh' }, lab, badge(f));
+}
+
+function buildField(f) {
+  const wrap = el('fieldset', { class: 'q', 'data-key': f.key });
+  S.wraps[f.key] = wrap;
+  const id = 'f_' + f.key;
+  if (f.type === 'text' || f.type === 'tel' || f.type === 'email' || f.type === 'num' || f.type === 'int' || f.type === 'zip') {
+    const itype = f.type === 'tel' ? 'tel' : f.type === 'email' ? 'email' : 'text';
+    const inp = el('input', { type: itype, id: id, name: f.key, autocomplete: f.type === 'email' ? 'email' : 'off',
+      inputmode: f.type === 'tel' || f.type === 'zip' ? 'tel' : f.type === 'num' ? 'decimal' : f.type === 'int' ? 'numeric' : null });
+    S.refs[f.key] = inp;
+    wrap.append(head(f, true), noteEl(f));
+    if (f.type === 'zip') {
+      wrap.append(el('div', { class: 'row' }, inp, el('button', { type: 'button', class: 'btn sm', text: '住所を検索', onclick: searchZip })));
+    } else wrap.append(inp);
+    if (f.type === 'zip' || f.type === 'tel' || f.type === 'num' || f.type === 'int') {
+      inp.addEventListener('change', function () { inp.value = toHalf(inp.value).trim(); });
+    }
+    if (f.limit) {
+      const w = el('div', { class: 'warn', hidden: true, text: '規定サイズ（全長6m×全幅2.5m×全高3.5m）を超えています。' });
+      wrap.append(w);
+      const upd = function () {
+        const n = parseFloat(toHalf(inp.value));
+        w.hidden = !(isFinite(n) && n > f.limit);
+      };
+      inp.addEventListener('input', upd); inp.addEventListener('change', upd);
+      S.refs[f.key + ':warn'] = upd;
+    }
+  } else if (f.type === 'select') {
+    const sel = el('select', { id: id, name: f.key }, el('option', { value: '', text: '選択してください' }),
+      f.options.map(function (o) { return el('option', { value: o, text: o }); }));
+    S.refs[f.key] = sel;
+    wrap.append(head(f, true), noteEl(f), sel);
+  } else if (f.type === 'area') {
+    const ta = el('textarea', { id: id, name: f.key });
+    S.refs[f.key] = ta;
+    wrap.append(head(f, true), noteEl(f), ta);
+  } else if (f.type === 'check') {
+    const box = el('div', { class: 'checks' }, f.options.map(function (o) {
+      return el('label', null, el('input', { type: 'checkbox', value: o, name: f.key }), el('span', { text: o }));
+    }));
+    S.refs[f.key] = box;
+    wrap.append(head(f, false), noteEl(f), box);
+  } else if (f.type === 'consent') {
+    const box = el('div', { class: 'checks' }, f.items.map(function (c) {
+      return el('label', { 'data-scope': c.scope || 'all' }, el('input', { type: 'checkbox', value: c.text, name: f.key }), el('span', { text: c.text }));
+    }));
+    S.refs[f.key] = box;
+    wrap.append(head(f, false), noteEl(f), box);
+  } else if (f.type === 'file') {
+    S.files[f.key] = [];
+    const list = el('div', { class: 'flist' });
+    const ferr = el('p', { class: 'ferr', hidden: true });
+    const inp = el('input', { type: 'file', id: id, multiple: true, accept: 'image/jpeg,image/png,image/heic,image/heif,image/webp,application/pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.pdf' });
+    inp.addEventListener('change', function () { addFiles(f.key, [].slice.call(inp.files)); inp.value = ''; });
+    S.refs[f.key] = { input: inp, list: list, ferr: ferr };
+    wrap.append(head(f, true), inp, ferr, list);
+  }
+  return wrap;
+}
+
+function renderForm(st) {
+  S.refs = {}; S.wraps = {}; S.files = {};
+  const form = el('form', { id: 'form', novalidate: true, class: S.readonly ? 'ro' : '' });
+  const all = el('fieldset', { id: 'allset' });
+  form.append(all);
+  S.secs = [];
+  SCHEMA.sections.forEach(function (sec) {
+    const body = el('fieldset', { class: 'secbody' });
+    const blk = el('section', { class: 'block', 'data-scope': sec.scope }, el('h2', { class: 'sec', text: sec.title }), body);
+    S.secs.push({ sec: sec, blk: blk, body: body });
+    sec.items.forEach(function (f) {
+      if (f.kind === 'note') body.append(el('p', { class: 'note', text: f.text }));
+      else if (f.kind === 'heading') body.append(el('div', { class: 'subh' }, el('h3', { text: f.title }), el('p', { text: f.text })));
+      else body.append(buildField(f));
+    });
+    all.append(blk);
+  });
+  const errbox = el('div', { class: 'errbox', id: 'errbox', hidden: true, role: 'alert' });
+  const btn = el('button', { type: 'submit', class: 'btn', id: 'submitBtn', text: S.mode === 'update' ? '変更を保存する' : '応募する' });
+  const tail = S.readonly ? null : el('div', { class: 'submit' }, errbox, btn,
+    el('p', { class: 'note', text: 'ご応募は、LINEアカウント1つにつき1回までです。送信後も' + st.deadlineText + 'まで、このフォームを開き直すと内容の確認・変更ができます。' }));
+  if (S.readonly) { all.disabled = true; }
+  form.append(tail);
+  form.addEventListener('submit', function (ev) { ev.preventDefault(); onSubmit(); });
+  const onEdit = function (ev) {
+    applyVisibility();
+    const q = ev.target && ev.target.closest ? ev.target.closest('.q') : null;
+    if (q) q.classList.remove('err');
+  };
+  form.addEventListener('input', onEdit);
+  form.addEventListener('change', onEdit);
+
+  const top = [];
+  if (S.mode === 'update' && !S.readonly) {
+    top.push(el('div', { class: 'banner' },
+      el('p', { text: st.deadlineText + 'まで、ご応募内容を変更できます。' }),
+      el('p', { class: 'rno', text: '受付番号：' + S.receiptNo })));
+  } else if (S.readonly) {
+    top.push(el('div', { class: 'banner' }, el('p', { class: 'rno', text: '受付番号：' + S.receiptNo })));
+  }
+  show(top, intro(st), form);
+  if (st.entry) fillEntry(st.entry);
+  applyVisibility();
+}
+
+/* ===== 値の読み書き・出し分け ===== */
+function getValue(f) {
+  const r = S.refs[f.key];
+  if (f.type === 'check' || f.type === 'consent') return [].slice.call(r.querySelectorAll('input:checked')).map(function (i) { return i.value; });
+  if (f.type === 'file') return S.files[f.key].filter(function (x) { return x.status === 'done'; }).map(function (x) { return x.id; });
+  return r.value;
+}
+function setValue(f, v) {
+  const r = S.refs[f.key];
+  if (f.type === 'check' || f.type === 'consent') {
+    const arr = Array.isArray(v) ? v : [];
+    [].slice.call(r.querySelectorAll('input')).forEach(function (i) { i.checked = arr.indexOf(i.value) >= 0; });
+  } else if (f.type !== 'file') r.value = v == null ? '' : String(v);
+}
+function scopeOk(scope, type) {
+  return scope === 'all' || (scope === 'car' && type === TYPE_CAR) || (scope === 'tent' && type === TYPE_TENT);
+}
+function isActive(f) {
+  if (!scopeOk(f.scope, S.refs.type.value)) return false;
+  if (f.when) {
+    const dep = FIELD[f.when.key];
+    if (!isActive(dep)) return false;
+    const v = getValue(dep);
+    if (f.when.eq !== undefined) return v === f.when.eq;
+    return Array.isArray(v) && v.indexOf(f.when.has) >= 0;
+  }
+  return true;
+}
+function clearField(f) {
+  if (f.type === 'file') { S.files[f.key] = []; renderFiles(f.key); S.refs[f.key].ferr.hidden = true; }
+  else setValue(f, (f.type === 'check' || f.type === 'consent') ? [] : '');
+  if (S.refs[f.key + ':warn']) S.refs[f.key + ':warn']();
+  S.wraps[f.key].classList.remove('err');
+}
+function applyVisibility() {
+  const type = S.refs.type.value;
+  S.secs.forEach(function (s) {
+    const on = scopeOk(s.sec.scope, type);
+    s.blk.hidden = !on;
+    s.body.disabled = !on;
+  });
+  FIELDS.forEach(function (f) {
+    const wrap = S.wraps[f.key];
+    const on = isActive(f);
+    wrap.hidden = !on;
+    wrap.disabled = !on;
+    if (!on) clearField(f);
+    if (f.type === 'consent') {
+      [].slice.call(S.refs[f.key].querySelectorAll('label')).forEach(function (lab) {
+        const sc = lab.getAttribute('data-scope');
+        const lon = on && scopeOk(sc, type);
+        lab.hidden = !lon;
+        const i = lab.querySelector('input');
+        i.disabled = !lon;
+        if (!lon) i.checked = false;
+      });
+    }
+  });
+}
+function fillEntry(entry) {
+  FIELDS.forEach(function (f) {
+    if (f.type === 'file') {
+      const arr = (entry.files && entry.files[f.key]) || [];
+      S.files[f.key] = arr.map(function (x) { return { uid: ++S.uid, status: 'done', id: x.id, name: x.name, file: null }; });
+      renderFiles(f.key);
+    } else if (entry.data && entry.data[f.key] !== undefined) setValue(f, entry.data[f.key]);
+  });
+  FIELDS.forEach(function (f) { if (S.refs[f.key + ':warn']) S.refs[f.key + ':warn'](); });
+}
+
+/* ===== 郵便番号 ===== */
+async function searchZip() {
+  const inp = S.refs.zip;
+  inp.value = toHalf(inp.value).trim();
+  const wrap = S.wraps.zip;
+  const old = wrap.querySelector('.ferr');
+  if (old) old.remove();
+  const say = function (t) { wrap.append(el('p', { class: 'ferr', text: t })); };
+  if (!/^[0-9]{3}-?[0-9]{4}$/.test(inp.value)) { say('郵便番号を半角数字で入力してください。'); return; }
+  try {
+    const res = await fetch('https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + inp.value.replace('-', ''));
+    const j = await res.json();
+    if (!j.results || !j.results[0]) { say('住所が見つかりませんでした。'); return; }
+    const r = j.results[0];
+    S.refs.pref.value = r.address1;
+    S.refs.city.value = r.address2;
+    S.refs.addr.value = r.address3;
+    ['pref', 'city', 'addr'].forEach(function (k) { S.wraps[k].classList.remove('err'); });
+  } catch (e) { say('住所の検索に失敗しました。'); }
+}
+
+/* ===== ファイル ===== */
+function detectMime(file) {
+  if (ALLOWED_MIME.indexOf(file.type) >= 0) return file.type;
+  const m = /\.([A-Za-z0-9]+)$/.exec(file.name || '');
+  return m ? (MIME_BY_EXT[m[1].toLowerCase()] || '') : '';
+}
+function addFiles(key, files) {
+  const ref = S.refs[key];
+  ref.ferr.hidden = true;
+  files.forEach(function (file) {
+    if (S.files[key].length >= MAX_FILES) { ref.ferr.textContent = '1欄につき最大' + MAX_FILES + 'ファイルです。'; ref.ferr.hidden = false; return; }
+    const mime = detectMime(file);
+    if (!mime) { ref.ferr.textContent = '画像またはPDFを選んでください。'; ref.ferr.hidden = false; return; }
+    const item = { uid: ++S.uid, status: 'uploading', id: '', name: file.name, file: file, mime: mime, msg: '' };
+    S.files[key].push(item);
+    S.wraps[key].classList.remove('err');
+    renderFiles(key);
+    enqueueUpload(key, item);
+  });
+}
+function enqueueUpload(key, item) {
+  item.status = 'uploading'; item.msg = '';
+  renderFiles(key);
+  S.queue = S.queue.then(function () { return uploadItem(key, item); });
+}
+function loadImage(file) {
+  return new Promise(function (resolve, reject) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+    img.src = url;
+  });
+}
+async function prepare(item) {
+  const file = item.file;
+  if (item.mime === 'application/pdf') {
+    if (file.size > MAX_BYTES) throw new Error('size');
+    return { blob: file, name: file.name, mime: item.mime };
+  }
+  let img;
+  try { img = await loadImage(file); } catch (e) {
+    if (file.size > MAX_BYTES) throw new Error('size');
+    return { blob: file, name: file.name, mime: item.mime };
+  }
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const sc = Math.min(1, 2000 / Math.max(w, h));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(w * sc)); cv.height = Math.max(1, Math.round(h * sc));
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+  cx.drawImage(img, 0, 0, cv.width, cv.height);
+  const blob = await new Promise(function (res) { cv.toBlob(res, 'image/jpeg', 0.85); });
+  if (!blob) {
+    if (file.size > MAX_BYTES) throw new Error('size');
+    return { blob: file, name: file.name, mime: item.mime };
+  }
+  if (blob.size > MAX_BYTES) throw new Error('size');
+  return { blob: blob, name: (file.name || 'image').replace(/\.[^.]*$/, '') + '.jpg', mime: 'image/jpeg' };
+}
+function toBase64(blob) {
+  return new Promise(function (resolve, reject) {
+    const fr = new FileReader();
+    fr.onload = function () { resolve(String(fr.result).replace(/^data:[^,]*,/, '')); };
+    fr.onerror = function () { reject(fr.error); };
+    fr.readAsDataURL(blob);
+  });
+}
+async function uploadItem(key, item) {
+  if (S.files[key].indexOf(item) < 0) return;
+  try {
+    const p = await prepare(item);
+    const b64 = await toBase64(p.blob);
+    const res = await api('upload', { field: key, name: p.name, mimeType: p.mime, base64: b64 });
+    if (S.files[key].indexOf(item) < 0) return;
+    if (res && res.ok) { item.status = 'done'; item.id = res.fileId; item.name = res.name || p.name; item.msg = ''; }
+    else { item.status = 'error'; item.msg = (res && res.message) || ''; }
+  } catch (e) {
+    item.status = 'error';
+    item.msg = e && e.message === 'size' ? 'ファイルは10MBまでです。' : '';
+  }
+  renderFiles(key);
+}
+function renderFiles(key) {
+  const list = S.refs[key].list;
+  list.replaceChildren.apply(list, S.files[key].map(function (item) {
+    const t = el('div', { class: 'ft' });
+    if (item.status === 'done') t.textContent = '済み（' + item.name + '）';
+    else {
+      t.append(item.name);
+      if (item.status === 'uploading') t.append(el('span', { class: 'fm', text: '送信中…' }));
+      if (item.status === 'error' && item.msg) t.append(el('span', { class: 'fm', text: item.msg }));
+    }
+    return el('div', { class: 'frow' }, t,
+      item.status === 'error' && item.file ? el('button', { type: 'button', class: 'retry', text: '失敗（もう一度）', onclick: function () { enqueueUpload(key, item); } }) : null,
+      el('button', { type: 'button', class: 'delbtn', text: '削除', onclick: function () {
+        S.files[key] = S.files[key].filter(function (x) { return x !== item; });
+        renderFiles(key);
+      } }));
+  }));
+}
+
+/* ===== 検証 ===== */
+function validate() {
+  const errs = [];
+  const add = function (f, msg) { errs.push({ key: f.key, label: f.label, msg: msg }); };
+  FIELDS.forEach(function (f) {
+    if (!isActive(f)) return;
+    if (f.type === 'file') {
+      const items = S.files[f.key];
+      if (items.some(function (x) { return x.status !== 'done'; })) add(f, f.label + 'のファイルの送信が終わっていません。');
+      else if (f.req && items.length < 1) add(f, f.label + 'をアップロードしてください。');
+      return;
+    }
+    const v = getValue(f);
+    if (f.type === 'check') { if (f.req && v.length < 1) add(f, f.label + 'を選択してください。'); return; }
+    if (f.type === 'consent') {
+      const need = f.items.filter(function (c) { return scopeOk(c.scope || 'all', S.refs.type.value); }).length;
+      if (v.length < need) add(f, f.label + 'のすべての項目にチェックしてください。');
+      return;
+    }
+    const s = String(v).trim();
+    if (!s) { if (f.req) add(f, f.label + (f.type === 'select' ? 'を選択してください。' : 'を入力してください。')); return; }
+    if (s.length > MAX_TEXT) { add(f, f.label + 'は' + MAX_TEXT.toLocaleString('ja-JP') + '字以内でご記入ください。'); return; }
+    if (f.type === 'zip' && !/^[0-9]{3}-?[0-9]{4}$/.test(s)) add(f, f.label + 'は半角数字とハイフンでご記入ください。');
+    else if (f.type === 'tel' && !/^[0-9][0-9-]{8,12}$/.test(s)) add(f, f.label + 'は半角数字とハイフンでご記入ください。');
+    else if (f.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) add(f, f.label + 'の形式をご確認ください。');
+    else if (f.type === 'num' && !(/^[0-9]+(\.[0-9]+)?$/.test(s) && parseFloat(s) > 0)) add(f, f.label + 'は0より大きい数字でご記入ください。');
+    else if (f.type === 'int' && !(/^[0-9]+$/.test(s) && parseInt(s, 10) >= 1)) add(f, f.label + 'は1以上の整数でご記入ください。');
+    else if (f.type === 'select' && f.options.indexOf(s) < 0) add(f, f.label + 'を選択してください。');
+  });
+  return errs;
+}
+function collect() {
+  const data = {}, files = {};
+  FIELDS.forEach(function (f) {
+    const on = isActive(f);
+    if (f.type === 'file') { files[f.key] = on ? getValue(f) : []; return; }
+    if (f.type === 'check' || f.type === 'consent') data[f.key] = on ? getValue(f) : [];
+    else data[f.key] = on ? String(getValue(f)).trim() : '';
+  });
+  return { data: data, files: files };
+}
+function showErrors(errs) {
+  const box = document.getElementById('errbox');
+  box.replaceChildren(el('b', { text: '次の項目をご確認ください' }), el('ul', null, errs.map(function (e) { return el('li', { text: e.msg || e.label }); })));
+  box.hidden = false;
+  document.querySelectorAll('.q.err').forEach(function (q) { q.classList.remove('err'); });
+  let first = null;
+  errs.forEach(function (e) {
+    const w = S.wraps[e.key];
+    if (!w) return;
+    w.classList.add('err');
+    if (!first || (w.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)) first = w;
+  });
+  (first || box).scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+/* ===== 送信 ===== */
+let sending = false;
+async function onSubmit() {
+  if (sending) return;
+  const box = document.getElementById('errbox');
+  box.hidden = true;
+  document.querySelectorAll('.q.err').forEach(function (q) { q.classList.remove('err'); });
+  const errs = validate();
+  if (errs.length) { showErrors(errs); return; }
+  const c = collect();
+  const btn = document.getElementById('submitBtn');
+  const label = btn.textContent;
+  sending = true; btn.disabled = true; btn.textContent = '送信中...';
+  try {
+    const res = await api('submit', { mode: S.mode, data: c.data, files: c.files });
+    if (res && res.ok) { showDone(res); return; }
+    if (res && res.error === 'invalid' && Array.isArray(res.fields)) {
+      showErrors(res.fields.map(function (x) {
+        const f = FIELD[x.field];
+        return { key: x.field, label: f ? f.label : '', msg: x.message || (f ? f.label : '') };
+      }));
+    } else showErrors([{ key: '', label: '', msg: (res && res.message) || '送信に失敗しました。もう一度お試しください。' }]);
+  } catch (e) {
+    showErrors([{ key: '', label: '', msg: '通信に失敗しました。電波の良いところで、もう一度お試しください。' }]);
+  } finally { sending = false; btn.disabled = false; btn.textContent = label; }
+}
+function showDone(res) {
+  const st = S.ctx;
+  const upd = res.updated || S.mode === 'update';
+  show(el('div', { class: 'done' },
+    el('h2', { text: upd ? 'ご応募内容の変更を保存しました' : 'ご応募を受け付けました' }),
+    upd ? null : el('p', { text: 'Symphonic Starmine 2027 飲食出店にご応募いただき、ありがとうございます。' }),
+    el('p', { class: 'rno', text: '受付番号：' + res.receiptNo + (upd ? '（変更しても受付番号は変わりません）' : '') }),
+    el('p', { text: '選考結果は' + st.resultDateText + '中に公式LINEでご連絡します。' }),
+    el('p', { text: 'ご応募内容の控えを公式LINEでお送りしました。' })));
+}
+
+boot();
+})();
+</script>
+</body>
+</html>
