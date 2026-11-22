@@ -735,6 +735,14 @@ function validate() {
     else if (f.type === 'int' && !(/^[0-9]+$/.test(s) && parseInt(s, 10) >= 1)) bad(f, f.label + 'は1以上の整数でご記入ください。');
     else if (f.type === 'select' && f.options.indexOf(s) < 0) bad(f, f.label + 'を選択してください。');
   });
+  // 片方だけの入力は不可（両方書くか、両方空）
+  [['item2Name', 'item2Price']].forEach(function (pr) {
+    const fa = FIELDS.find(function (f) { return f.key === pr[0]; }), fb = FIELDS.find(function (f) { return f.key === pr[1]; });
+    if (errs.some(function (e) { return e.key === pr[0] || e.key === pr[1]; })) return;
+    const a = String(getValue(fa)).trim(), b = String(getValue(fb)).trim();
+    if (a && !b) bad(fb, fb.label + 'を入力してください。');
+    if (!a && b) bad(fa, fa.label + 'を入力してください。');
+  });
   return errs;
 }
 function collect() {

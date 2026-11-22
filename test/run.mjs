@@ -402,6 +402,19 @@ test('締切後は upload・submit を断る／status は closed=true で応募�
   assert.equal(env.call({ action: 'status', ...env.as('Unone') }).closed, false);
 });
 
+test('出店商品②は任意。ただし商品名と価格の片方だけは不可（画面と保存側）', () => {
+  const env = makeEnv();
+  const sub = 'Upair';
+  let r = submit(env, sub, 'new', tentData({ item2Name: '', item2Price: '400円' }), { ...NOFILES, ...tentFiles(env, sub) });
+  assert.equal(r.error, 'invalid'); assert.deepEqual(ids(r), ['item2Name']);
+  r = submit(env, sub, 'new', tentData({ item2Name: 'ポテト', item2Price: '' }), { ...NOFILES, ...tentFiles(env, sub) });
+  assert.equal(r.error, 'invalid'); assert.deepEqual(ids(r), ['item2Price']);
+  r = submit(env, sub, 'new', tentData({ item2Name: '', item2Price: '' }), { ...NOFILES, ...tentFiles(env, sub) });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.match(HTML, /\[\['item2Name', 'item2Price'\]\]/);
+  assert.match(HTML, /"key":"item2Name"[^}]*"req":false/); assert.match(HTML, /"key":"item2Price"[^}]*"req":false/);
+});
+
 test('出店形態ごとの必須・選択肢・形式の検証', () => {
   const env = makeEnv();
   const sub = 'Uval';

@@ -38,6 +38,7 @@ var SECTION_TITLES = { s1: '出店者情報', s2: 'キッチンカーの情報',
 var FIXED_LABELS = { receiptNo: '受付番号', createdAt: '受付日時', updatedAt: '最終変更日時', lineUserId: 'LINEユーザーID', lineName: 'LINE表示名' };
 /* 後から足す項目の見出しはここへ（右端に足す。既存列の並びは変えない） */
 var TAIL_LABELS = [];
+var PAIRS = [['item2Name', 'item2Price']]; // 片方だけの入力は不可
 
 /* 質問の定義。index.html の schema と同じ内容（test/run.mjs が食い違いを検出する）。
    build は不要。直すときは両方を直す。 */
@@ -501,8 +502,16 @@ function normalize_(data) {
     if (!ok) return bad(f.type === 'select' ? 'の選択内容が正しくありません。' : 'の形式をご確認ください。');
     out[f.key] = s;
   });
+  // 片方だけの入力は不可（11/22 コーキの指示）。両方書くか、両方空
+  PAIRS.forEach(function (pr) {
+    var a = out[pr[0]], b = out[pr[1]];
+    if (errors.some(function (e) { return e.field === pr[0] || e.field === pr[1]; })) return;
+    if (a && !b) errors.push({ field: pr[1], message: labelOf_(pr[1]) + 'を入力してください。' });
+    if (!a && b) errors.push({ field: pr[0], message: labelOf_(pr[0]) + 'を入力してください。' });
+  });
   return { errors: errors, out: out };
 }
+function labelOf_(key) { for (var i = 0; i < FIELDS.length; i++) if (FIELDS[i].key === key) return FIELDS[i].label; return key; }
 function normalizeFiles_(files, type, out) {
   var errors = [], ids = {};
   var src = (files && typeof files === 'object' && !Array.isArray(files)) ? files : {};
