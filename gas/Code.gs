@@ -612,6 +612,14 @@ function safeFolderName_(receiptNo, shop) {
   return (receiptNo + ' ' + String(shop).replace(/[\r\n\t\/\\]/g, ' ')).slice(0, 120);
 }
 /** 受付番号の列で最後に埋まっている行の次（運営がその下に書いたメモの行には引きずられない）。 */
+function ownedCols_(headers) {
+  var cols = [];
+  allLabels_().forEach(function (l) {
+    var i = headers.indexOf(l);
+    if (i >= 0 && TAIL_LABELS.indexOf(l) < 0) cols.push(i);
+  });
+  return cols;
+}
 function nextRow_(sh, headers) {
   var col = headers.indexOf(FIXED_LABELS.receiptNo);
   var last = sh.getLastRow(), r = 1;
@@ -619,7 +627,18 @@ function nextRow_(sh, headers) {
     var vals = sh.getRange(2, col + 1, last - 1, 1).getValues();
     for (var i = 0; i < vals.length; i++) if (String(vals[i][0]) !== '') r = i + 2;
   }
-  return r + 1;
+  r += 1;
+  /* 書く予定の列（フォームの列と固定列）が全部空の最初の行まで下へ進める（運営のメモ行を上書きしない） */
+  if (r <= last) {
+    var owned = ownedCols_(headers);
+    var rows = sh.getRange(r, 1, last - r + 1, headers.length).getValues();
+    for (var k = 0; k < rows.length; k++) {
+      var used = owned.some(function (c) { return String(rows[k][c] == null ? '' : rows[k][c]) !== ''; });
+      if (!used) return r + k;
+    }
+    return last + 1;
+  }
+  return r;
 }
 /** 先頭が = + - @ ' の文字は、先頭に ' を付けて書く（Sheets は ' を表示せず、読むときも返さない）。 */
 function sheetText_(v) {
@@ -640,7 +659,8 @@ function writeCells_(sh, row, headers, cells) {
     while (j + 1 < cols.length && cols[j + 1].col === cols[j].col + 1) j++;
     var rng = sh.getRange(row, cols[i].col, 1, j - i + 1);
     var old = rng.getValues()[0];
-    for (var k = 0; k <= j - i; k++) written.push({ row: row, col: cols[i].col + k, old: old[k] });
+    var oldFmt = rng.getNumberFormats()[0];
+    for (var k = 0; k <= j - i; k++) written.push({ row: row, col: cols[i].col + k, old: old[k], fmt: oldFmt[k] });
     rng.setNumberFormat('@');
     rng.setValues([cols.slice(i, j + 1).map(function (c) { return sheetText_(c.val); })]);
     i = j + 1;
@@ -649,8 +669,13 @@ function writeCells_(sh, row, headers, cells) {
 }
 function restoreCells_(sh, written) {
   written.slice().reverse().forEach(function (w) {
-    try { sh.getRange(w.row, w.col).setValue(sheetText_(w.old)); } catch (x) { /* できる範囲で戻す */ }
+    try {
+      var cell = sh.getRange(w.row, w.col);
+      cell.setNumberFormat(w.fmt || 'General'); // 元の書式を戻してから値を戻す
+      cell.setValue(typeof w.old === 'string' ? sheetText_(w.old) : w.old); // 文字以外（Date・数値）はそのまま
+    } catch (x) { /* できる範囲で戻す */ }
   });
+  try { SpreadsheetApp.flush(); } catch (y) { /* 戻せなかったら諦める */ }
 }
 /** ロックの中：応募済みの確認・番号・移動・書き込み・印だけ。 */
 function submitLocked_(who, mode, v, idsByField, body, pre) {
@@ -668,6 +693,11 @@ function submitLocked_(who, mode, v, idsByField, body, pre) {
   if (mode === 'update') {
     row = findRow_(sh, headers, existing);
     if (!row) return err_('rowNotFound', 'ご応募内容を読み込めませんでした。運営までお問い合わせください。');
+    /* 確認のあとでファイル列が変わっていたら、書く前にやり直させる（画面の送り直しで prepareFiles_ からやり直し） */
+    var nowOld = rowToEntry_(headers, sh.getRange(row, 1, 1, headers.length).getValues()[0]);
+    var nowIds = [];
+    Object.keys(nowOld.files).forEach(function (k) { nowIds = nowIds.concat(nowOld.files[k]); });
+    if (nowIds.slice().sort().join(',') !== pre.oldIds.slice().sort().join(',')) return err_('busy', '混み合っています。しばらくしてからもう一度お試しください。');
   } else row = nextRow_(sh, headers);
 
   /* 動かす直前に、ゴミ箱に入っていないかだけ確かめ直す */

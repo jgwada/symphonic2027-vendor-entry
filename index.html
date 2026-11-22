@@ -173,8 +173,8 @@ function mockLiff() {
     },
     getDecodedIDToken: function () {
       let left = parseInt(params.get('tokenLeft') || '3600', 10);
-      try { if (sessionStorage.getItem('ss27_mock_relogin')) left = 3600; } catch (e) { /* 何もしない */ }
-      return { exp: Math.floor(Date.now() / 1000) + left };
+      try { if (sessionStorage.getItem('ss27_mock_relogin') && params.get('noRefresh') !== '1') left = 3600; } catch (e) { /* 何もしない */ }
+      return { exp: Math.floor(Date.now() / 1000) + left, sub: params.get('sub') || 'Umock' };
     },
     getProfile: function () {
       if (MOCK_STATE === 'error') return Promise.reject(new Error('mock'));
@@ -250,7 +250,7 @@ async function apiOnce(action, payload) {
       res = await r.json();
     } finally { clearTimeout(timer); }
   }
-  if (res && res.error === 'unauthorized' && action !== 'status') {
+  if (res && res.error === 'unauthorized' && action !== 'status' && !reloginRecently()) {
     relogin();
     const e = new Error('relogin'); e.relogin = true; throw e;
   }
@@ -259,6 +259,17 @@ async function apiOnce(action, payload) {
 
 /* ===== IDトークンの期限切れ対策（入力中の値と済みファイルを退避してログインし直す） ===== */
 const DRAFT_KEY = 'ss27_vendor_draft';
+function currentSub() {
+  try {
+    const d = L.getDecodedIDToken && L.getDecodedIDToken();
+    return d && d.sub ? String(d.sub) : '';
+  } catch (e) { return ''; }
+}
+const RELOGIN_AT_KEY = 'ss27_relogin_at';
+/** 2分以内にログインし直したばかりか（端末の時計ずれで無限に開き直さないため） */
+function reloginRecently() {
+  try { return Date.now() - parseInt(sessionStorage.getItem(RELOGIN_AT_KEY) || '0', 10) < 120000; } catch (e) { return false; }
+}
 function saveDraft() {
   try {
     const c = collect();
@@ -266,7 +277,7 @@ function saveDraft() {
     FIELDS.forEach(function (f) {
       if (f.type === 'file') files[f.key] = S.files[f.key].filter(function (x) { return x.status === 'done'; }).map(function (x) { return { id: x.id, name: x.name }; });
     });
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ mode: S.mode, data: c.data, files: files }));
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ mode: S.mode, sub: currentSub(), data: c.data, files: files }));
   } catch (e) { /* 退避できなくてもログインし直しは続ける */ }
 }
 function restoreDraft() {
@@ -277,11 +288,13 @@ function restoreDraft() {
     sessionStorage.removeItem(DRAFT_KEY);
   } catch (e) { d = null; }
   if (!d || d.mode !== S.mode || S.readonly) return;
+  if ((d.sub || '') !== currentSub()) return; // 別のLINEアカウントの下書きは復元しない（もう消してある）
   fillEntry({ data: d.data, files: d.files });
   applyVisibility();
 }
 function relogin() {
   saveDraft();
+  try { sessionStorage.setItem(RELOGIN_AT_KEY, String(Date.now())); } catch (e) { /* 何もしない */ }
   // LINE アプリの中では liff.login() が使えないので、LIFF を開き直して新しい IDトークンをもらう
   if (L.isInClient && L.isInClient()) { location.href = 'https://liff.line.me/' + LIFF_ID; return; }
   L.login({ redirectUri: location.href });
@@ -293,7 +306,10 @@ function ensureFresh() {
     const d = L.getDecodedIDToken && L.getDecodedIDToken();
     exp = d && d.exp ? d.exp : 0;
   } catch (e) { exp = 0; }
-  if (exp && exp - Date.now() / 1000 < 300) { relogin(); return false; }
+  if (exp && exp - Date.now() / 1000 < 300) {
+    if (reloginRecently()) return true; // ログインし直した直後は、そのまま送ってサーバーの判断に任せる
+    relogin(); return false;
+  }
   return true;
 }
 
@@ -316,7 +332,11 @@ async function boot() {
     stage = 'status';
     const st = await api('status');
     clearTimeout(timer);
-    if (!st || !st.ok) { showMsg('読み込みに失敗しました。開き直してください', '段階：status'); return; }
+    if (!st || !st.ok) {
+      const msg = st && st.error !== 'unauthorized' && st.message ? st.message : '読み込みに失敗しました。開き直してください';
+      showMsg(msg, '段階：status');
+      return;
+    }
     S.ctx = st; // タイムアウト表示のあとでも、成功で返ってきたらこの結果で画面を出し直す
     route(st);
   } catch (e) {
