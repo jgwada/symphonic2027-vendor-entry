@@ -35,3 +35,13 @@ Code.gs のいちばん上: `DEADLINE` / `DEADLINE_TEXT` / `RESULT_DATE_TEXT`（
 - 運営が足した列（選考結果など）は上書きされない。見出しの名前で列を探す
 - 後から項目を足すときは `FIELDS` と index.html の schema の両方に足し、試験を通す。シート見出しは右端に自動で足される
 - 手元確認: `python3 -m http.server` → `http://localhost:8000/index.html?mock=1&state=new|applied|closed|closedApplied|notFriend|error`（localhost / 127.0.0.1 だけ有効）
+
+## リッチメニュー「応募フォーム」→ 名乗り（LINE の Webhook）
+リッチメニューの「応募フォーム」を押すと、トークに「応募フォーム」と送られる。doPost が LINE の Webhook として受け取る（本文に `events` 配列があるものだけ。既存の action API とは分けてあり、常に 200 で `{}` を返す）。
+- 名乗っていない・応募済みでもない人 → 「店舗名と代表者名を送ってください。」、状態 `greet:<userId>` = `waiting`
+- 名乗り待ちの人から次のテキスト（「応募フォーム」以外）→ タブ「名乗り」に1行（日時・LINEユーザーID・LINE表示名・送られた文。2,000字で切る）、状態 `done`、「ありがとうございます。下記のリンクから応募フォームにお進みください。」＋ `ENTRY_FORM_URL`
+- 名乗り済み・応募済み（`applied:<userId>`）の人が「応募フォーム」→ 「下記のリンクから応募フォームにお進みください。」＋ `ENTRY_FORM_URL`
+- それ以外（普通の文・スタンプ・画像・follow など）は何もしない（運営が手動チャットで返す）
+- 「応募フォーム」の判定は前後の空白を除いた完全一致
+なりすまし対策（Apps Script では X-Line-Signature が読めないため）: `destination` が `BOT_USER_ID` と一致しなければ無視（空なら bot/info から取って保存）／状態を変える前に `GET /v2/bot/profile/<userId>` が 200 であること（displayName を表示名に使う）／同じ `webhookEventId` は6時間キャッシュして1回しか処理しない。
+設定: LINE Developers の Messaging API チャネルで Webhook URL にウェブアプリのURLを入れ、「Webhookの利用」をオン。応答メッセージ（自動応答）は、運営が手動チャットで返す運用なので状況に合わせて設定する。返信の結果は `LINE_LAST_REPLY`（日時・状態コード）。「名乗り」タブは `setup()` が作る（無ければ最初の名乗りで作る）。

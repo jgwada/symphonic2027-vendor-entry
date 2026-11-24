@@ -22,6 +22,16 @@ var FOLDER_MIME = 'application/vnd.google-apps.folder';
 var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
 var VERIFY_URL = 'https://api.line.me/oauth2/v2.1/verify';
 var PUSH_URL = 'https://api.line.me/v2/bot/message/push';
+var REPLY_URL = 'https://api.line.me/v2/bot/message/reply';
+var BOT_INFO_URL = 'https://api.line.me/v2/bot/info';
+var PROFILE_URL = 'https://api.line.me/v2/bot/profile/';
+var GREET_SHEET_NAME = '名乗り';
+var GREET_HEADERS = ['日時', 'LINEユーザーID', 'LINE表示名', '送られた文'];
+var GREET_TRIGGER = '応募フォーム';
+var GREET_ASK = '店舗名と代表者名を送ってください。';
+var GREET_THANKS = 'ありがとうございます。下記のリンクから応募フォームにお進みください。';
+var GREET_LINK = '下記のリンクから応募フォームにお進みください。';
+var WEBHOOK_DEDUPE_SEC = 6 * 60 * 60;
 var MAX_TEXT = 2000;
 var MAX_FILE_BYTES = 10 * 1024 * 1024;
 var MAX_FILES_PER_FIELD = 3;
@@ -137,6 +147,11 @@ function doPost(e) {
   } catch (x) {
     return out_(err_('badRequest', 'リクエストの形式が正しくありません。'));
   }
+  /* LINE の Webhook（本文に events 配列がある）は、既存の action API とは完全に分ける。常に 200 で {} を返す。 */
+  if (body && typeof body === 'object' && !Array.isArray(body) && Array.isArray(body.events)) {
+    try { handleWebhook_(body); } catch (x) { Logger.log('webhook error: ' + (x && x.message)); }
+    return ContentService.createTextOutput('{}').setMimeType(ContentService.MimeType.JSON);
+  }
   return out_(handle_(body));
 }
 function handle_(body) {
@@ -246,6 +261,7 @@ function setup() {
     else sh = ss.insertSheet(SHEET_NAME);
   }
   ensureHeaders_(sh);
+  ensureGreetSheet_(ss);
   Logger.log('setup done');
 }
 /** 時間トリガー（1日1回の片付け）と、シートを開いたときのメニューを作る。 */
@@ -865,4 +881,110 @@ function sendLine_(who, text) {
   } catch (x) {
     try { saveLineResult_('error', x && x.message); } catch (y) { /* 何もしない */ }
   }
+}
+
+/* ===== リッチメニュー「応募フォーム」→ 名乗り（LINE の Webhook） ===== */
+function ensureGreetSheet_(ss) {
+  var sh = ss.getSheetByName(GREET_SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(GREET_SHEET_NAME);
+  var cur = sh.getLastRow() >= 1 ? sh.getRange(1, 1, 1, GREET_HEADERS.length).getValues()[0].map(String) : [];
+  if (cur.join('|') !== GREET_HEADERS.join('|')) {
+    sh.getRange(1, 1, 1, GREET_HEADERS.length).setNumberFormat('@').setValues([GREET_HEADERS]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function lineGet_(url) {
+  var token = prop_('LINE_CHANNEL_TOKEN');
+  if (!token) return null;
+  return UrlFetchApp.fetch(url, { method: 'get', headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+}
+/** この Webhook が自分の公式LINE宛てか（X-Line-Signature が読めないので destination で確かめる）。 */
+function isMyBot_(destination) {
+  if (typeof destination !== 'string' || !destination) return false;
+  var id = prop_('BOT_USER_ID');
+  if (!id) {
+    var r = lineGet_(BOT_INFO_URL);
+    if (!r || r.getResponseCode() !== 200) return false;
+    try { id = String(JSON.parse(r.getContentText()).userId || ''); } catch (x) { return false; }
+    if (!id) return false;
+    setProp_('BOT_USER_ID', id);
+  }
+  return destination === id;
+}
+function saveLastReply_(code) {
+  setProp_('LINE_LAST_REPLY', nowText_() + ' | ' + code); // 鍵や本文は入れない
+}
+function replyLine_(replyToken, text) {
+  try {
+    var token = prop_('LINE_CHANNEL_TOKEN');
+    if (!token) { saveLastReply_('no-token'); return; }
+    var res = UrlFetchApp.fetch(REPLY_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] }),
+      muteHttpExceptions: true
+    });
+    saveLastReply_(res.getResponseCode());
+  } catch (x) {
+    try { saveLastReply_('error'); } catch (y) { /* 何もしない */ }
+  }
+}
+function entryLinkText_(head) {
+  return head + '\n' + prop_('ENTRY_FORM_URL');
+}
+function handleWebhook_(body) {
+  if (!isMyBot_(body.destination)) return;
+  body.events.slice(0, 20).forEach(function (ev) {
+    try { handleGreetEvent_(ev); } catch (x) { Logger.log('webhook event error: ' + (x && x.message)); }
+  });
+}
+function handleGreetEvent_(ev) {
+  if (!ev || ev.type !== 'message' || !ev.message || ev.message.type !== 'text' || typeof ev.message.text !== 'string') return;
+  var src = ev.source;
+  if (!src || src.type !== 'user' || typeof src.userId !== 'string' || !src.userId) return;
+  if (typeof ev.replyToken !== 'string' || !ev.replyToken) return;
+  var uid = src.userId;
+  var text = ev.message.text.trim();
+  var isForm = text === GREET_TRIGGER;
+  var eventId = typeof ev.webhookEventId === 'string' ? ev.webhookEventId : '';
+  var cache = CacheService.getScriptCache();
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (x) { return; }
+  var reply = '';
+  try {
+    if (eventId && cache.get('wh:' + eventId)) return; // LINE の再送は1回しか処理しない
+    var state = prop_('greet:' + uid);
+    var applied = !!prop_('applied:' + uid);
+    var action = '';
+    if (isForm) action = (state === 'done' || applied) ? 'link' : 'ask';
+    else if (state === 'waiting') action = 'record';
+    if (!action) return;
+    /* 状態を変えたり「名乗り」に書く前に、本物の友だちか確かめる */
+    var pr = lineGet_(PROFILE_URL + encodeURIComponent(uid));
+    if (!pr || pr.getResponseCode() !== 200) return;
+    var name = '';
+    try { name = String(JSON.parse(pr.getContentText()).displayName || ''); } catch (x) { name = ''; }
+    if (action === 'ask') {
+      setProp_('greet:' + uid, 'waiting');
+      reply = GREET_ASK;
+    } else if (action === 'record') {
+      var sh = ensureGreetSheet_(SpreadsheetApp.openById(prop_('SHEET_ID')));
+      var r = sh.getLastRow() + 1;
+      var rng = sh.getRange(r, 1, 1, GREET_HEADERS.length);
+      rng.setNumberFormat('@');
+      rng.setValues([[nowText_(), uid, name.slice(0, 100), text.slice(0, MAX_TEXT)].map(sheetText_)]);
+      SpreadsheetApp.flush();
+      setProp_('greet:' + uid, 'done');
+      reply = entryLinkText_(GREET_THANKS);
+    } else {
+      reply = entryLinkText_(GREET_LINK);
+    }
+    if (eventId) cache.put('wh:' + eventId, '1', WEBHOOK_DEDUPE_SEC);
+  } finally {
+    lock.releaseLock();
+  }
+  if (reply) replyLine_(ev.replyToken, reply);
 }

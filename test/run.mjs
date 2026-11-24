@@ -119,7 +119,7 @@ function makeEnv(opt = {}) {
     tryLock() { if (hooks.locked) return false; hooks.locked = true; return true; },
     releaseLock() { hooks.locked = false; hooks.events.push('unlock'); } }) };
   const fetchLog = [];
-  const behavior = { verifyOk: (tok) => /^idt:/.test(tok), pushStatus: 200 };
+  const behavior = { verifyOk: (tok) => /^idt:/.test(tok), pushStatus: 200, botId: 'Ubotself', profile: (uid) => ({ status: 200, displayName: '表示名 ' + uid }), replyStatus: 200 };
   const UrlFetchApp = {
     fetch(url, o) {
       fetchLog.push({ url, o });
@@ -130,7 +130,13 @@ function makeEnv(opt = {}) {
       if (url === 'https://api.line.me/v2/bot/message/push') {
         return { getResponseCode: () => behavior.pushStatus, getContentText: () => (behavior.pushStatus === 200 ? '{}' : '{"message":"fail"}') };
       }
-      if (url === 'https://api.line.me/v2/bot/info') return { getResponseCode: () => 200, getContentText: () => '{}' };
+      if (url === 'https://api.line.me/v2/bot/message/reply') return { getResponseCode: () => behavior.replyStatus, getContentText: () => '{}' };
+      if (url === 'https://api.line.me/v2/bot/info') return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ userId: behavior.botId }) };
+      if (url.startsWith('https://api.line.me/v2/bot/profile/')) {
+        const p = behavior.profile(decodeURIComponent(url.split('/profile/')[1]));
+        return { getResponseCode: () => p.status, getContentText: () => JSON.stringify(p.status === 200 ? { displayName: p.displayName } : { message: 'Not found' }) };
+      }
+      if (false) return { getResponseCode: () => 200, getContentText: () => '{}' };
       throw new Error('想定外の外部接続: ' + url);
     }
   };
@@ -146,6 +152,8 @@ function makeEnv(opt = {}) {
       return fmt.replace(/yyyy|MM|dd|HH|mm|ss/g, (k) => parts[k]);
     }
   };
+  const cacheStore = new Map();
+  const CacheService = { getScriptCache: () => ({ get: (k) => (cacheStore.has(k) ? cacheStore.get(k) : null), put: (k, v) => { cacheStore.set(k, v); } }) };
   const ContentService = { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ t, setMimeType() { return this; }, getContent() { return this.t; } }) };
   const triggers = [];
   const ScriptApp = {
@@ -154,12 +162,13 @@ function makeEnv(opt = {}) {
     deleteTrigger: (t) => { triggers.splice(triggers.indexOf(t), 1); },
     newTrigger: (h) => { const t = { h, getHandlerFunction: () => h }; const b = { timeBased: () => b, everyDays: () => b, atHour: () => b, forSpreadsheet: () => b, onOpen: () => b, create: () => { triggers.push(t); return t; } }; return b; }
   };
-  const ctx = vm.createContext({ Drive, SpreadsheetApp, PropertiesService, LockService, UrlFetchApp, Utilities, ContentService, ScriptApp, Logger: { log() {} }, console });
+  const ctx = vm.createContext({ CacheService, Drive, SpreadsheetApp, PropertiesService, LockService, UrlFetchApp, Utilities, ContentService, ScriptApp, Logger: { log() {} }, console });
   vm.runInContext(CODE, ctx, { filename: 'Code.gs' });
   set('PARENT_FOLDER_ID', 'PARENTFOLDER0001');
   drive.set('PARENTFOLDER0001', { id: 'PARENTFOLDER0001', name: '11_飲食出店者', mimeType: FOLDER, parents: [], description: '', trashed: false, createdTime: new Date().toISOString() });
   set('LINE_LOGIN_CHANNEL_ID', 'CH1');
   set('LINE_CHANNEL_TOKEN', 'tok-secret-xyz');
+  if (!opt.noBotId) set('BOT_USER_ID', 'Ubotself');
   set('ENTRY_FORM_URL', 'https://liff.line.me/TEST-LIFF');
   if (opt.testSecret) set('TEST_SECRET', opt.testSecret);
   ctx.setup();
@@ -168,6 +177,7 @@ function makeEnv(opt = {}) {
     ctx, props, drive, sheets, hooks, fetchLog, behavior, triggers, run, set,
     sheet: () => sheets.get(props.get('SHEET_ID')).tabs.find((t) => t.name === '応募'),
     call(body) { const o = ctx.doPost({ postData: { contents: JSON.stringify(body) } }); return JSON.parse(o.getContent()); },
+    replies: () => fetchLog.filter((x) => x.url.endsWith('/message/reply')).map((x) => JSON.parse(x.o.payload)),
     pushes: () => fetchLog.filter((x) => x.url.includes('/push')).map((x) => JSON.parse(x.o.payload)),
     as: (sub) => ({ idToken: 'idt:' + sub }),
     temp: () => props.get('TEMP_FOLDER_ID'),
@@ -1006,6 +1016,152 @@ test('index.html（再点検）：2分以内の再ログインはしない・下
   assert.ok(script.includes('sub: currentSub()') && script.includes("(d.sub || '') !== currentSub()"));
   assert.ok(script.includes("st.error !== 'unauthorized' && st.message ? st.message : '読み込みに失敗しました。開き直してください'"));
   assert.ok(/showMsg\(msg, '段階：status'\)/.test(script));
+});
+
+
+/* ---------- リッチメニュー「応募フォーム」→ 名乗り（Webhook） ---------- */
+const LINK = '下記のリンクから応募フォームにお進みください。\nhttps://liff.line.me/TEST-LIFF';
+const msgEv = (uid, text, id, extra = {}) => ({ type: 'message', webhookEventId: id, replyToken: 'rt-' + id, source: { type: 'user', userId: uid }, message: { type: 'text', id: '1', text }, ...extra });
+const hook = (env, events, destination = 'Ubotself') => {
+  const o = env.ctx.doPost({ postData: { contents: JSON.stringify({ destination, events }) } });
+  assert.equal(o.getContent(), '{}', 'Webhook は常に {} を返す');
+  return o;
+};
+const greetTab = (env) => env.sheets.get(env.props.get('SHEET_ID')).tabs.find((t) => t.name === '名乗り');
+
+test('Webhook：初回「応募フォーム」→ ask・waiting／次のテキスト→ 名乗りに1行・done・案内／もう一度→ 案内だけ', () => {
+  const env = makeEnv();
+  assert.ok(greetTab(env), 'setup() が「名乗り」タブを作る');
+  assert.deepEqual([1, 2, 3, 4].map((c) => greetTab(env).cell(1, c)), ['日時', 'LINEユーザーID', 'LINE表示名', '送られた文']);
+  hook(env, [msgEv('Ug1', ' 応募フォーム\n', 'e1')]);
+  assert.deepEqual(env.replies().map((r) => r.messages[0].text), ['店舗名と代表者名を送ってください。']);
+  assert.equal(env.replies()[0].replyToken, 'rt-e1');
+  assert.equal(env.props.get('greet:Ug1'), 'waiting');
+  assert.equal(greetTab(env).lastRow, 1);
+  hook(env, [msgEv('Ug1', '株式会社テスト 代表 太郎', 'e2')]);
+  const t = greetTab(env);
+  assert.equal(t.lastRow, 2);
+  assert.equal(t.cell(2, 2), 'Ug1'); assert.equal(t.cell(2, 3), '表示名 Ug1'); assert.equal(t.cell(2, 4), '株式会社テスト 代表 太郎'); assert.match(t.cell(2, 1), /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/);
+  assert.equal(env.props.get('greet:Ug1'), 'done');
+  assert.equal(env.replies()[1].messages[0].text, 'ありがとうございます。' + LINK);
+  hook(env, [msgEv('Ug1', '応募フォーム', 'e3')]);
+  assert.equal(env.replies()[2].messages[0].text, LINK);
+  assert.equal(t.lastRow, 2, '行は増えない'); assert.equal(env.props.get('greet:Ug1'), 'done');
+  hook(env, [msgEv('Ug1', 'ふつうの質問です', 'e4')]);
+  assert.equal(env.replies().length, 3, '名乗り済みの普通の文は何もしない'); assert.equal(t.lastRow, 2);
+  assert.match(env.props.get('LINE_LAST_REPLY'), /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \| 200$/);
+  assert.ok(!env.props.get('LINE_LAST_REPLY').includes('tok-secret-xyz') && !env.props.get('LINE_LAST_REPLY').includes('ありがとう'));
+  assert.equal(env.fetchLog.filter((x) => x.url.endsWith('/message/reply')).every((x) => x.o.headers.Authorization === 'Bearer tok-secret-xyz'), true);
+  // 名乗り待ちのまま「応募フォーム」をもう一度 → ask をもう一度
+  hook(env, [msgEv('Ug2', '応募フォーム', 'f1'), msgEv('Ug2', '応募フォーム', 'f2')]);
+  assert.deepEqual(env.replies().slice(3).map((r) => r.messages[0].text), ['店舗名と代表者名を送ってください。', '店舗名と代表者名を送ってください。']);
+  assert.equal(env.props.get('greet:Ug2'), 'waiting');
+});
+
+test('Webhook：応募済みの人の「応募フォーム」→ 案内だけ（状態も行も作らない）', () => {
+  const env = makeEnv();
+  const sub = 'Uapplied';
+  assert.equal(submit(env, sub, 'new', tentData(), { ...NOFILES, ...tentFiles(env, sub) }).ok, true);
+  hook(env, [msgEv(sub, '応募フォーム', 'a1')]);
+  assert.deepEqual(env.replies().map((r) => r.messages[0].text), [LINK]);
+  assert.ok(!env.props.has('greet:' + sub)); assert.equal(greetTab(env).lastRow, 1);
+});
+
+test('Webhook：destination 違い・profile が 200 でない・BOT_USER_ID が空なら bot/info で取って保存', () => {
+  const env = makeEnv();
+  hook(env, [msgEv('Ux1', '応募フォーム', 'd1')], 'Uotherbot');
+  hook(env, [msgEv('Ux1', '応募フォーム', 'd2')], '');
+  env.behavior.profile = () => ({ status: 404 });
+  hook(env, [msgEv('Ux2', '応募フォーム', 'd3')]);
+  assert.equal(env.replies().length, 0); assert.ok(!env.props.has('greet:Ux1') && !env.props.has('greet:Ux2')); assert.equal(greetTab(env).lastRow, 1);
+  // 名乗り待ち状態でも、profile が 404 なら書かない
+  env.props.set('greet:Ux3', 'waiting');
+  hook(env, [msgEv('Ux3', '名乗りです', 'd4')]);
+  assert.equal(greetTab(env).lastRow, 1); assert.equal(env.props.get('greet:Ux3'), 'waiting'); assert.equal(env.replies().length, 0);
+  // BOT_USER_ID が空：bot/info から取って保存し、その destination だけ通す
+  const e2 = makeEnv({ noBotId: true });
+  assert.ok(!e2.props.has('BOT_USER_ID'));
+  hook(e2, [msgEv('Uy1', '応募フォーム', 'd5')], 'Uotherbot');
+  assert.equal(e2.replies().length, 0); assert.equal(e2.props.get('BOT_USER_ID'), 'Ubotself');
+  hook(e2, [msgEv('Uy1', '応募フォーム', 'd6')]);
+  assert.equal(e2.replies().length, 1);
+  // 外部接続が例外を投げても Webhook は 200 の {} を返す（hook() が {} を確認）
+  const e4 = makeEnv({ noBotId: true });
+  e4.ctx.UrlFetchApp = { fetch() { throw new Error('network down'); } };
+  hook(e4, [msgEv('Uq', '応募フォーム', 'd8')]);
+  assert.ok(!e4.props.has('greet:Uq'));
+  // 鍵が無ければ bot/info も取れず何もしない
+  const e3 = makeEnv({ noBotId: true }); e3.props.delete('LINE_CHANNEL_TOKEN');
+  hook(e3, [msgEv('Uz', '応募フォーム', 'd7')]);
+  assert.equal(e3.replies().length, 0);
+});
+
+test('Webhook：同じ webhookEventId の再送は1回分だけ', () => {
+  const env = makeEnv();
+  hook(env, [msgEv('Ur', '応募フォーム', 'same1')]);
+  hook(env, [msgEv('Ur', '応募フォーム', 'same1')]);
+  assert.equal(env.replies().length, 1);
+  hook(env, [msgEv('Ur', '株式会社再送 代表 次郎', 'same2')]);
+  hook(env, [msgEv('Ur', '株式会社再送 代表 次郎', 'same2')]); // 再送されても行は1つ
+  assert.equal(greetTab(env).lastRow, 2); assert.equal(env.replies().length, 2);
+  // 6時間：キャッシュに入れている
+  assert.ok(CODE.includes('WEBHOOK_DEDUPE_SEC = 6 * 60 * 60'));
+});
+
+test('Webhook：名乗り待ちでない人の普通の文・スタンプ・画像・follow・グループ → 何もしない／名乗り待ちのテキスト以外も何もしない', () => {
+  const env = makeEnv();
+  const other = [
+    msgEv('Un1', 'こんにちは', 'n1'),
+    msgEv('Un1', '', 'n1b'),
+    { type: 'message', webhookEventId: 'n2', replyToken: 'r', source: { type: 'user', userId: 'Un1' }, message: { type: 'sticker', id: '1' } },
+    { type: 'message', webhookEventId: 'n3', replyToken: 'r', source: { type: 'user', userId: 'Un1' }, message: { type: 'image', id: '2' } },
+    { type: 'follow', webhookEventId: 'n4', replyToken: 'r', source: { type: 'user', userId: 'Un1' } },
+    { type: 'unfollow', webhookEventId: 'n5', source: { type: 'user', userId: 'Un1' } },
+    msgEv('Un1', '応募フォーム', 'n6', { source: { type: 'group', groupId: 'G1', userId: 'Un1' } }),
+    msgEv('Un1', '応募フォーム', 'n7', { replyToken: '' }),
+    msgEv('Un1', '応募フォームです', 'n8'), msgEv('Un1', '応募フォーム 店舗', 'n9'),
+    null, 5, {}
+  ];
+  hook(env, other);
+  assert.equal(env.replies().length, 0); assert.ok(![...env.props.keys()].some((k) => k.startsWith('greet:'))); assert.equal(greetTab(env).lastRow, 1);
+  hook(env, []);
+  // 名乗り待ち中にスタンプ・画像が来ても何もしない（待ちのまま）
+  hook(env, [msgEv('Uw', '応募フォーム', 'w1')]);
+  hook(env, [{ type: 'message', webhookEventId: 'w2', replyToken: 'r', source: { type: 'user', userId: 'Uw' }, message: { type: 'sticker', id: '1' } },
+    { type: 'message', webhookEventId: 'w3', replyToken: 'r', source: { type: 'user', userId: 'Uw' }, message: { type: 'image', id: '2' } }]);
+  assert.equal(env.props.get('greet:Uw'), 'waiting'); assert.equal(greetTab(env).lastRow, 1); assert.equal(env.replies().length, 1);
+});
+
+test('Webhook：「=」「+」始まりの名乗りも表示名も文字のまま／2,000字で切る／例外が出ても 200', () => {
+  const env = makeEnv();
+  env.behavior.profile = () => ({ status: 200, displayName: '=名前' });
+  hook(env, [msgEv('Uf', '応募フォーム', 'x1')]);
+  hook(env, [msgEv('Uf', '=HYPERLINK("http://x")', 'x2')]);
+  const t = greetTab(env);
+  assert.deepEqual(t.formulas, []); assert.equal(t.cell(2, 4), '=HYPERLINK("http://x")'); assert.equal(t.cell(2, 3), '=名前');
+  hook(env, [msgEv('Uf2', '応募フォーム', 'x3')]);
+  hook(env, [msgEv('Uf2', '+' + 'あ'.repeat(3000), 'x4')]);
+  assert.equal(t.cell(3, 4).length, 2000); assert.deepEqual(t.formulas, []);
+  // 返信が失敗しても、保存の状態は残り LINE_LAST_REPLY に状態コード
+  env.behavior.replyStatus = 500;
+  hook(env, [msgEv('Uf3', '応募フォーム', 'x5')]);
+  assert.equal(env.props.get('greet:Uf3'), 'waiting'); assert.match(env.props.get('LINE_LAST_REPLY'), / \| 500$/);
+  // 例外（シートが無い）でも 200 の {}
+  env.props.delete('SHEET_ID');
+  hook(env, [msgEv('Uf3', '店舗です', 'x6')]);
+  assert.equal(env.props.get('greet:Uf3'), 'waiting', '書けなかったので done にしない');
+});
+
+test('Webhook でも action API でもない壊れた本文は既存どおり／events が配列でなければ既存の経路', () => {
+  const env = makeEnv();
+  const bad = JSON.parse(env.ctx.doPost({ postData: { contents: '{"events":' } }).getContent());
+  assert.equal(bad.error, 'badRequest');
+  assert.equal(JSON.parse(env.ctx.doPost({ postData: { contents: '' } }).getContent()).error, 'badRequest');
+  assert.equal(JSON.parse(env.ctx.doPost({}).getContent()).error, 'badRequest');
+  assert.equal(JSON.parse(env.ctx.doPost({ postData: { contents: '{"events":"x","action":"status"}' } }).getContent()).error, 'unauthorized');
+  assert.equal(env.replies().length, 0);
+  // action API の本文は Webhook 扱いにならない
+  assert.equal(env.call({ action: 'status', ...env.as('Uapi') }).ok, true);
 });
 
 /* ---------- 実行 ---------- */
