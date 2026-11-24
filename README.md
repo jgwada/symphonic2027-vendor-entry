@@ -32,6 +32,7 @@ Code.gs のいちばん上: `DEADLINE` / `DEADLINE_TEXT` / `RESULT_DATE_TEXT`（
 
 ## 運用
 - `resetApplied('<LINEのsub>')` … 応募済みの印を消す（行を消しただけでは印は残る）
+- `resetGreet('<LINEのuserId>')` … 名乗りの印を消す（「名乗り」タブの行は別に消す）
 - 運営が足した列（選考結果など）は上書きされない。見出しの名前で列を探す
 - 後から項目を足すときは `FIELDS` と index.html の schema の両方に足し、試験を通す。シート見出しは右端に自動で足される
 - 手元確認: `python3 -m http.server` → `http://localhost:8000/index.html?mock=1&state=new|applied|closed|closedApplied|notFriend|error`（localhost / 127.0.0.1 だけ有効）

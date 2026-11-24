@@ -305,6 +305,12 @@ function resetApplied(sub) {
   props_().deleteProperty('applied:' + sub);
   Logger.log('applied mark removed');
 }
+/** 名乗りの印（greet:<userId>）を消す（手で使う。「名乗り」タブの行は別に消す） */
+function resetGreet(userId) {
+  if (!userId) throw new Error('LINEのユーザーIDを渡してください。');
+  props_().deleteProperty('greet:' + userId);
+  Logger.log('greet mark removed');
+}
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('飲食出店フォーム')
     .addItem('公式LINEの鍵を設定', 'setLineToken')
